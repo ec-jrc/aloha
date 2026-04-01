@@ -1,5 +1,12 @@
 # CHANGELOG
 
+## [3.0.1] - 01 Apr 2026
+
+### Fixed
+
+- Refactored MCP server to run initialisation and closing in parallel
+- Refactored MCP server connections management to allow multiple requests in parallel
+
 ## [3.0.0] - 05 Mar 2026
 
 ### Added

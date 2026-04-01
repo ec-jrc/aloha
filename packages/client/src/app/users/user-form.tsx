@@ -31,7 +31,12 @@ import { ReactNode, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { getProjectsList } from "../../services/projects";
-import { createUser, getUserDetail, updateUser } from "../../services/users";
+import {
+  createUser,
+  getUserDetail,
+  updateCurrentUserInfo,
+  updateUser,
+} from "../../services/users";
 import { exceptionToMessage } from "../../utils/type-utils";
 import { MultiSelect } from "@/components/ui/multi-select";
 
@@ -57,9 +62,15 @@ type Props = {
   children: ReactNode;
   userId: string | undefined;
   onAccept: () => Promise<void>;
+  updateCurrentUser?: boolean;
 };
 
-export default function UserForm({ userId, children, onAccept }: Props) {
+export default function UserForm({
+  userId,
+  children,
+  onAccept,
+  updateCurrentUser,
+}: Props) {
   const [dialogOpen, setDialogOpen] = useState<boolean>(false);
 
   const [isLoadingUser, user] = useService(
@@ -114,7 +125,9 @@ export default function UserForm({ userId, children, onAccept }: Props) {
     };
 
     try {
-      if (userId && userId.length > 0) {
+      if (updateCurrentUser) {
+        await updateCurrentUserInfo({ fullName: values.fullName });
+      } else if (userId && userId.length > 0) {
         // Update existing user
         await updateUser(userId, values);
       } else {
@@ -156,7 +169,10 @@ export default function UserForm({ userId, children, onAccept }: Props) {
                           <FormItem className="w-1/2 mr-2">
                             <FormLabel>User ID</FormLabel>
                             <FormControl>
-                              <Input {...field} disabled={isLoading} />
+                              <Input
+                                {...field}
+                                disabled={isLoading || updateCurrentUser}
+                              />
                             </FormControl>
                             <FormDescription>
                               User ID of the user according to the
@@ -201,12 +217,13 @@ export default function UserForm({ userId, children, onAccept }: Props) {
                                 ) => ({ label: camelCaseToSpaces(key), value })
                               )}
                               animation={0}
-                              maxCount={3}
+                              maxCount={updateCurrentUser ? 99 : 3}
                               asChild
                               onValueChange={(value) => {
                                 if (user) user.permissions = value;
                               }}
                               defaultValue={user?.permissions}
+                              disabled={updateCurrentUser}
                             />
                           </FormControl>
                           <FormDescription>
@@ -231,12 +248,13 @@ export default function UserForm({ userId, children, onAccept }: Props) {
                                 value: p.id,
                               }))}
                               animation={0}
-                              maxCount={3}
+                              maxCount={updateCurrentUser ? 99 : 3}
                               asChild
                               onValueChange={(value) => {
                                 if (user) user.projects = value;
                               }}
                               defaultValue={user?.projects}
+                              disabled={updateCurrentUser}
                             />
                           </FormControl>
                           <FormDescription>
@@ -247,32 +265,33 @@ export default function UserForm({ userId, children, onAccept }: Props) {
                       );
                     }}
                   />
-
-                  <FormField
-                    control={form.control}
-                    name="disabled"
-                    render={({ field }) => {
-                      return (
-                        <FormItem className="flex flex-row items-center justify-start rounded-lg border p-3 shadow-sm">
-                          <FormControl>
-                            <Switch
-                              disabled={isLoading}
-                              className="mr-1"
-                              checked={!field.value}
-                              onCheckedChange={(e) => field.onChange(!e)}
-                            ></Switch>
-                          </FormControl>
-                          <div className="space-y-0.5">
-                            <FormLabel>Enabled</FormLabel>
-                            <FormDescription>
-                              Disable or enable the user
-                            </FormDescription>
-                          </div>
-                          <FormMessage />
-                        </FormItem>
-                      );
-                    }}
-                  />
+                  {!updateCurrentUser && (
+                    <FormField
+                      control={form.control}
+                      name="disabled"
+                      render={({ field }) => {
+                        return (
+                          <FormItem className="flex flex-row items-center justify-start rounded-lg border p-3 shadow-sm">
+                            <FormControl>
+                              <Switch
+                                disabled={isLoading}
+                                className="mr-1"
+                                checked={!field.value}
+                                onCheckedChange={(e) => field.onChange(!e)}
+                              ></Switch>
+                            </FormControl>
+                            <div className="space-y-0.5">
+                              <FormLabel>Enabled</FormLabel>
+                              <FormDescription>
+                                Disable or enable the user
+                              </FormDescription>
+                            </div>
+                            <FormMessage />
+                          </FormItem>
+                        );
+                      }}
+                    />
+                  )}
                 </ScrollArea>
                 <DialogFooter className="justify-end">
                   <DialogClose asChild>

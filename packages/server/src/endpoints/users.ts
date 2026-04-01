@@ -14,12 +14,13 @@ governing permissions and limitations under the Licence.
 */
 
 import { authentication_strategy, schemas } from "aloha-shared";
+import z from "zod";
 import { injector } from "../injector/injector";
 import { getLogger } from "../injector/provide-logger";
-import { crudGenerator, HTTPError } from "./utils";
 import { assertFieldInObject } from "../utils/type-utils";
-import z from "zod";
+import { crudGenerator, HTTPError } from "./utils";
 
+const usersCache = () => injector().resolve("usersCache");
 const fetchCache = () => injector().resolve("fetchCache");
 
 const logger = getLogger("USERS");
@@ -96,7 +97,8 @@ export async function usersRoutes() {
         }
         return (
           (await checkUserName(existingUser.userId, existingUser.id)) &&
-          (await userRepository().updateById(id, user))
+          (await userRepository().updateById(id, user)) &&
+          usersCache().del(id)
         );
       },
       delete: async (req) => {
@@ -119,6 +121,7 @@ export async function usersRoutes() {
           }
 
           fetchCache().clear();
+          usersCache().del(id);
           return true;
         } else {
           return false;

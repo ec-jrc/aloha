@@ -8,13 +8,16 @@
     "integration-tests-debug": "NODE_ENV=e2e INTEGRATION_TESTS=true vitest run --inspect-brk --no-file-parallelism --hook-timeout=60000 --test-timeout=0"
   },
   "devDependencies": {
+    "@a2a-js/sdk": "^0.3.10",
     "@eslint/js": "^9.35.0",
     "@tailwindcss/vite": "^4.1.13",
+    "@types/express": "^5.0.6",
     "@types/node": "^25.2.0",
     "eslint": "^9.35.0",
     "eslint-plugin-react-hooks": "^5.0.0",
     "eslint-plugin-react-refresh": "^0.4.16",
     "execa": "^9.6.1",
+    "express": "^5.2.1",
     "get-port": "^7.1.0",
     "getport": "^0.1.0",
     "globals": "^16.4.0",
@@ -23,6 +26,7 @@
     "puppeteer": "^24.36.1",
     "typescript": "~5.9.2",
     "typescript-eslint": "^8.43.0",
+    "uuid": "^13.0.0",
     "vite": "^7.1.5",
     "vitest": "^4.0.18"
   }

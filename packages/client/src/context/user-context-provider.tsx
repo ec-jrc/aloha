@@ -14,14 +14,29 @@ governing permissions and limitations under the Licence.
 */
 
 import { getUserInfo } from "@/services/users";
+import { isEqual } from "@react-hookz/deep-equal";
 import { authentication_strategy } from "aloha-shared";
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
+import {
+  Subject,
+  distinctUntilChanged,
+  merge,
+  switchMap,
+  tap,
+  timer,
+} from "rxjs";
 import { toast } from "sonner";
-import { timer, switchMap, distinctUntilChanged, tap } from "rxjs";
 import { exceptionToMessage } from "../utils/type-utils";
 import { UserContext } from "./contexes";
-import { isEqual } from "@react-hookz/deep-equal";
 
+const forceRefreshUser: Subject<boolean> = new Subject();
+
+// eslint-disable-next-line react-refresh/only-export-components
+export function useForceRefreshUser() {
+  return useCallback(() => {
+    forceRefreshUser.next(true);
+  }, []);
+}
 export default function UserContextProvider({
   children,
 }: React.PropsWithChildren) {
@@ -40,7 +55,7 @@ export default function UserContextProvider({
 
     const timeout = import.meta.env.DEV ? 5_000 : 60_000;
 
-    const subscription = timer(0, timeout)
+    const subscription = merge(timer(0, timeout), forceRefreshUser)
       .pipe(
         switchMap(() => {
           return refreshUser();

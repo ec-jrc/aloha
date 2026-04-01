@@ -23,18 +23,54 @@ import {
 } from "@a2a-js/sdk";
 import { isTextPart } from "./a2a-utils";
 
-export type A2ADisplayEvent = {
+type A2ADisplayBaseEvent = {
   id: string;
   timestamp: Date;
   rawEvents?: RawA2AEvent[]; // Track original raw events for debugging
-} & (
-  | { type: "user_message"; content: string }
-  | { type: "agent_message"; content: string; streaming?: boolean }
-  | { type: "task_status"; status: TaskState; message?: string; taskId: string }
-  | { type: "artifact_created"; artifact: Artifact; taskId: string }
-  | { type: "artifact_updated"; artifact: Artifact; taskId: string }
-  | { type: "error"; message: string; details?: unknown }
-);
+};
+type A2AUserMessageDisplayEvent = A2ADisplayBaseEvent & {
+  type: "user_message";
+  content: string;
+};
+
+type A2AAgentMessageDisplayEvent = A2ADisplayBaseEvent & {
+  type: "agent_message";
+  content: string;
+};
+
+export type A2ATaskStatusDisplayEvent = A2ADisplayBaseEvent & {
+  type: "task_status";
+  status: TaskState;
+  message?: string;
+  taskId: string;
+  streaming: boolean;
+};
+
+type A2AArtifactCreatedDisplayEvent = A2ADisplayBaseEvent & {
+  type: "artifact_created";
+  artifact: Artifact;
+  taskId: string;
+};
+
+type A2AArtifactUpdatedDisplayEvent = A2ADisplayBaseEvent & {
+  type: "artifact_updated";
+  artifact: Artifact;
+  taskId: string;
+};
+
+type A2AErrorDisplayEvent = A2ADisplayBaseEvent & {
+  type: "error";
+  message: string;
+  details?: unknown;
+};
+
+export type A2ADisplayEvent =
+  | A2AUserMessageDisplayEvent
+  | A2AAgentMessageDisplayEvent
+  | A2ATaskStatusDisplayEvent
+  | A2AArtifactCreatedDisplayEvent
+  | A2AArtifactUpdatedDisplayEvent
+  | A2AErrorDisplayEvent;
 
 export type RawA2AEvent =
   | Task
@@ -47,15 +83,29 @@ export type RawEventWithType = RawA2AEvent & {
   type: "user_message" | "agent_message" | "error_message";
 };
 
+function isTaskDisplayEventStreaming(a2aEvent: Task | TaskStatusUpdateEvent) {
+  return !(
+    a2aEvent.status.state === "completed" ||
+    a2aEvent.status.state === "failed" ||
+    a2aEvent.status.state === "canceled" ||
+    a2aEvent.status.state === "rejected" ||
+    a2aEvent.status.state === "input-required"
+  );
+}
+
+function getTaskDisplayEventIndex(
+  taskId: string,
+  displayEvents: A2ADisplayEvent[]
+) {
+  return displayEvents.findIndex(
+    (e) => e.type === "task_status" && e.taskId === taskId
+  );
+}
+
 export function transformA2AEvents(
   events: RawEventWithType[]
 ): A2ADisplayEvent[] {
   const displayEvents: A2ADisplayEvent[] = [];
-  let streamingTextAccumulator: {
-    content: string;
-    id: string;
-    timestamp: Date;
-  } | null = null;
 
   for (const event of events) {
     const timestamp = new Date();
@@ -82,16 +132,6 @@ export function transformA2AEvents(
       if ("kind" in event && event.kind === "task") {
         const task = event as Task;
 
-        // Finalize any streaming message
-        if (streamingTextAccumulator) {
-          displayEvents.push({
-            ...streamingTextAccumulator,
-            type: "agent_message",
-            streaming: false,
-          });
-          streamingTextAccumulator = null;
-        }
-
         // Add task status
         const statusMessage = task.status.message
           ? task.status.message.parts
@@ -101,20 +141,28 @@ export function transformA2AEvents(
           : undefined;
 
         // Check if last event is same status - if so, update it instead of adding new
-        const lastEvent = displayEvents[displayEvents.length - 1];
-        if (
-          lastEvent?.type === "task_status" &&
-          lastEvent.status === task.status.state
-        ) {
+        const taskStatusEventIndex = getTaskDisplayEventIndex(
+          task.id,
+          displayEvents
+        );
+
+        if (taskStatusEventIndex >= 0) {
+          const taskStatusEvent = displayEvents[
+            taskStatusEventIndex
+          ] as A2ATaskStatusDisplayEvent;
+
           // Concatenate messages if both exist
-          const combinedMessage = [lastEvent.message, statusMessage]
+          const combinedMessage = [taskStatusEvent.message, statusMessage]
             .filter(Boolean)
-            .join("");
-          displayEvents[displayEvents.length - 1] = {
-            ...lastEvent,
+            .join("\n");
+
+          displayEvents[taskStatusEventIndex] = {
+            ...taskStatusEvent,
             message: combinedMessage || undefined,
             timestamp, // Update to latest timestamp
-            rawEvents: [...(lastEvent.rawEvents || []), event],
+            rawEvents: [...(taskStatusEvent.rawEvents || []), event],
+            streaming: isTaskDisplayEventStreaming(task),
+            status: task.status.state as TaskState,
           };
         } else {
           displayEvents.push({
@@ -125,7 +173,8 @@ export function transformA2AEvents(
             message: statusMessage,
             taskId: task.id,
             rawEvents: [event],
-          });
+            streaming: isTaskDisplayEventStreaming(task),
+          } as A2ATaskStatusDisplayEvent);
         }
 
         // Add artifacts
@@ -141,23 +190,22 @@ export function transformA2AEvents(
         }
 
         // Extract text from task history
-        if (task.history && task.history.length > 0) {
-          const lastMessage = task.history[task.history.length - 1];
-          if (lastMessage.role === "agent") {
-            const textParts = lastMessage.parts.filter(isTextPart);
-            const content = textParts.map((p) => p.text).join("\n");
-            if (content) {
-              displayEvents.push({
-                id: lastMessage.messageId || crypto.randomUUID(),
-                timestamp,
-                type: "agent_message",
-                content,
-                streaming: false,
-                rawEvents: [event],
-              });
-            }
-          }
-        }
+        // if (task.history && task.history.length > 0) {
+        //   const lastMessage = task.history[task.history.length - 1];
+        //   if (lastMessage.role === "agent") {
+        //     const textParts = lastMessage.parts.filter(isTextPart);
+        //     const content = textParts.map((p) => p.text).join("\n");
+        //     if (content) {
+        //       displayEvents.push({
+        //         id: lastMessage.messageId || crypto.randomUUID(),
+        //         timestamp,
+        //         type: "agent_message",
+        //         content,
+        //         rawEvents: [event],
+        //       });
+        //     }
+        //   }
+        // }
       }
       // Message event
       else if ("kind" in event && event.kind === "message") {
@@ -167,42 +215,13 @@ export function transformA2AEvents(
           const content = textParts.map((p) => p.text).join("\n");
 
           if (content) {
-            // Accumulate streaming text
-            if (streamingTextAccumulator) {
-              streamingTextAccumulator.content += content;
-            } else {
-              streamingTextAccumulator = {
-                id: message.messageId || crypto.randomUUID(),
-                timestamp,
-                content,
-              };
-            }
-
-            // Update or add streaming message
-            const existingIndex = displayEvents.findIndex(
-              (e) =>
-                e.type === "agent_message" &&
-                e.id === streamingTextAccumulator!.id
-            );
-
-            if (existingIndex >= 0) {
-              displayEvents[existingIndex] = {
-                ...streamingTextAccumulator!,
-                type: "agent_message",
-                streaming: true,
-                rawEvents: [
-                  ...(displayEvents[existingIndex].rawEvents || []),
-                  event,
-                ],
-              };
-            } else {
-              displayEvents.push({
-                ...streamingTextAccumulator!,
-                type: "agent_message",
-                streaming: true,
-                rawEvents: [event],
-              });
-            }
+            displayEvents.push({
+              id: message.messageId || crypto.randomUUID(),
+              timestamp,
+              type: "agent_message",
+              content,
+              rawEvents: [event],
+            });
           }
         }
       }
@@ -210,23 +229,6 @@ export function transformA2AEvents(
       // TaskStatusUpdateEvent
       else if ("kind" in event && event.kind === "status-update") {
         const statusUpdate = event as TaskStatusUpdateEvent;
-
-        // Finalize streaming message on status change
-        if (streamingTextAccumulator) {
-          const existingIndex = displayEvents.findIndex(
-            (e) =>
-              e.type === "agent_message" &&
-              e.id === streamingTextAccumulator!.id
-          );
-          if (existingIndex >= 0) {
-            displayEvents[existingIndex] = {
-              ...streamingTextAccumulator!,
-              type: "agent_message",
-              streaming: false,
-            };
-          }
-          streamingTextAccumulator = null;
-        }
 
         const statusMessage = statusUpdate.status.message
           ? statusUpdate.status.message.parts
@@ -236,22 +238,29 @@ export function transformA2AEvents(
           : undefined;
 
         // Check if last event is same status - if so, update it instead of adding new
-        const lastEvent = displayEvents[displayEvents.length - 1];
-        if (
-          lastEvent?.type === "task_status" &&
-          lastEvent.status === statusUpdate.status.state
-        ) {
-          // Concatenate messages if both exist
+        const taskStatusEventIndex = getTaskDisplayEventIndex(
+          statusUpdate.taskId,
+          displayEvents
+        );
+        if (taskStatusEventIndex >= 0) {
+          const lastEvent = displayEvents[
+            taskStatusEventIndex
+          ] as A2ATaskStatusDisplayEvent;
+
           const combinedMessage = [lastEvent.message, statusMessage]
             .filter(Boolean)
-            .join("");
-          displayEvents[displayEvents.length - 1] = {
+            .join("\n");
+
+          displayEvents[taskStatusEventIndex] = {
             ...lastEvent,
             message: combinedMessage || undefined,
             timestamp, // Update to latest timestamp
             rawEvents: [...(lastEvent.rawEvents || []), event],
+            streaming: isTaskDisplayEventStreaming(statusUpdate),
+            status: statusUpdate.status.state as TaskState,
           };
         } else {
+          console.warn("Task status update event without previous task", event);
           displayEvents.push({
             id: crypto.randomUUID(),
             timestamp,
@@ -260,6 +269,7 @@ export function transformA2AEvents(
             message: statusMessage,
             taskId: statusUpdate.taskId,
             rawEvents: [event],
+            streaming: isTaskDisplayEventStreaming(statusUpdate),
           });
         }
       }
@@ -289,16 +299,6 @@ export function transformA2AEvents(
         rawEvents: [event],
       });
     }
-  }
-
-  // Finalize any remaining streaming message
-  if (streamingTextAccumulator) {
-    displayEvents.push({
-      ...streamingTextAccumulator,
-      type: "agent_message",
-      streaming: false,
-      rawEvents: [],
-    });
   }
 
   return displayEvents;

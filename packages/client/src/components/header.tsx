@@ -13,25 +13,29 @@ OF ANY KIND, either express or implied. See the Licence for the specific languag
 governing permissions and limitations under the Licence.
 */
 
+import UserForm from "@/app/users/user-form";
 import { UserContext } from "@/context/contexes";
+import { useForceRefreshUser } from "@/context/user-context-provider";
+import { cn } from "@/lib/utils";
 import {
-  UserIcon as NotLoggedIcon,
-  UserCircleIcon,
-  HomeIcon,
-  XMarkIcon,
   ComputerDesktopIcon,
+  HomeIcon,
+  UserIcon as NotLoggedIcon,
   RectangleStackIcon,
   ServerStackIcon,
+  TagIcon,
+  UserCircleIcon,
   UserGroupIcon,
   WrenchScrewdriverIcon,
-  TagIcon,
+  XMarkIcon,
 } from "@heroicons/react/24/outline";
 import { Bars3Icon } from "@heroicons/react/24/solid";
-import { BotIcon } from "lucide-react";
 import { authentication_strategy } from "aloha-shared";
+import { BotIcon } from "lucide-react";
 import { useContext, useEffect, useState } from "react";
+import { Link, NavLink } from "react-router";
 import { PATH_LOGIN, PATH_LOGOUT } from "../app/routing";
-import { NavLink, Link } from "react-router";
+import { Button } from "./ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -40,8 +44,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "./ui/dropdown-menu";
-import { Button } from "./ui/button";
-import { cn } from "@/lib/utils";
 
 function logout() {
   window.location.href = PATH_LOGOUT;
@@ -53,6 +55,34 @@ function login() {
 
 function getYear() {
   return new Date().getFullYear();
+}
+
+function OpenProfileDropdownMenuItem({
+  userId,
+}: {
+  userId: string | undefined;
+}) {
+  const forceRefreshUser = useForceRefreshUser();
+  if (!userId) {
+    return null;
+  }
+  return (
+    <UserForm
+      userId={userId}
+      onAccept={async () => {
+        forceRefreshUser();
+      }}
+      updateCurrentUser={true}
+    >
+      <DropdownMenuItem
+        onSelect={(evt) => {
+          evt.preventDefault();
+        }}
+      >
+        Profile
+      </DropdownMenuItem>
+    </UserForm>
+  );
 }
 
 function MobileNavLink({
@@ -358,8 +388,7 @@ export default function Header() {
                     </div>
                   </DropdownMenuLabel>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem>Profile</DropdownMenuItem>
-                  <DropdownMenuItem>Settings</DropdownMenuItem>
+                  <OpenProfileDropdownMenuItem userId={user?.id} />
                   <DropdownMenuSeparator />
                   <DropdownMenuItem
                     onClick={() => logout()}
@@ -411,8 +440,7 @@ export default function Header() {
               </div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
-            <DropdownMenuItem>Profile</DropdownMenuItem>
-            <DropdownMenuItem>Settings</DropdownMenuItem>
+            <OpenProfileDropdownMenuItem userId={user?.id} />
             <DropdownMenuSeparator />
             <DropdownMenuItem
               data-testid="logout-witness"

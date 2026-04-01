@@ -22,7 +22,7 @@ import {
 } from "@/components/ui/dialog";
 import JsonView from "@/mcp-inspector/JsonView";
 import { A2ADisplayEvent } from "@/utils/a2a-event-transformer";
-import { Check, Code, Copy, Loader2 } from "lucide-react";
+import { Check, Code, Copy } from "lucide-react";
 import { useState } from "react";
 import ArtifactDisplay from "./artifact-display";
 import TaskStatusBadge from "./task-status-badge";
@@ -64,19 +64,12 @@ export function A2AEvent({ event }: { event: A2ADisplayEvent }) {
         return <div className="whitespace-pre-wrap">{event.content}</div>;
 
       case "agent_message":
-        return (
-          <div className="whitespace-pre-wrap">
-            {event.content}
-            {event.streaming && (
-              <Loader2 className="inline-block ml-2 h-4 w-4 animate-spin" />
-            )}
-          </div>
-        );
+        return <div className="whitespace-pre-wrap">{event.content}</div>;
 
       case "task_status":
         return (
           <div className="flex items-center gap-2">
-            <TaskStatusBadge status={event.status} />
+            <TaskStatusBadge event={event} />
             {event.message && (
               <span className="text-sm text-muted-foreground">
                 {event.message}

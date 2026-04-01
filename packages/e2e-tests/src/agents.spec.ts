@@ -16,8 +16,10 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   IntegrationEnvironment,
   newHomePageTab,
+  Process,
   safeClickHandle,
   sleep,
+  startA2AAgentSampleProcess,
   startIntegrationTestEnvironment,
 } from "./utils/integration-test-support";
 import {
@@ -60,11 +62,19 @@ async function clickButtonByText(page: Page, text: string) {
 
 describe("[A] Agent", () => {
   let env: IntegrationEnvironment;
+  let agentEnv: Process;
+
   beforeAll(async () => {
-    env = await startIntegrationTestEnvironment();
+    [env, agentEnv] = await Promise.all([
+      startIntegrationTestEnvironment(),
+      startA2AAgentSampleProcess(),
+    ]);
   });
 
-  afterAll(async () => await env?.stop());
+  afterAll(async () => {
+    await agentEnv.stop();
+    await env?.stop();
+  });
 
   it("should create a new agent with tags and authentication", async () => {
     const page = await newHomePageTab(env);
@@ -73,10 +83,12 @@ describe("[A] Agent", () => {
 
     await clickButtonByText(page, "New Agent");
 
+    const agentPort = agentEnv.port;
+
     await page.type("input[name='name']", getRandomString());
     await page.type("input[name='description']", getRandomString());
     await page.type("input[name='serverPath']", getRandomString());
-    await page.type("input[name='serverUrl']", "http://localhost:3030");
+    await page.type("input[name='serverUrl']", `http://localhost:${agentPort}`);
     await page.type("input[name='tags']", "tag1, tag2");
 
     await safeClickHandle(
@@ -85,6 +97,77 @@ describe("[A] Agent", () => {
 
     await page.waitForNetworkIdle();
     await waitForFirstAgentListed(page);
+    await page.close();
+  });
+
+  // TODO: This test requires the A2A agent to connect successfully.
+  // Currently, the A2A client is not connecting to the sample server.
+  // The ping service fetches the agent card but the connection is not established.
+  // This needs investigation into the A2A SDK client factory behavior.
+  it.skip("should send a message to the agent and receive a response", async () => {
+    const page = await newHomePageTab(env);
+
+    await activateAgentListPage(page);
+
+    // Create a new A2A agent
+    await clickButtonByText(page, "New Agent");
+
+    const agentPort = agentEnv.port;
+
+    await page.type("input[name='name']", "A2A Test Agent");
+    await page.type("input[name='description']", "Test A2A agent");
+    await page.type("input[name='serverPath']", "a2a-test-" + getRandomString());
+
+    // Select A2A protocol from the dropdown
+    const protocolTrigger = await page.waitForSelector(
+      "[role='dialog'] button[role='combobox']"
+    );
+    await safeClickHandle(protocolTrigger);
+    await sleep(500);
+    const a2aOption = await page.waitForSelector(
+      "[role='listbox'] [role='option']:first-child"
+    );
+    await safeClickHandle(a2aOption);
+
+    await page.type("input[name='serverUrl']", `http://localhost:${agentPort}`);
+
+    await safeClickHandle(
+      await page.waitForSelector("[role='dialog'] button[type='submit']")
+    );
+
+    await page.waitForNetworkIdle();
+
+    // Wait for the ping service to connect the agent (runs every 5 seconds)
+    await sleep(7000);
+
+    // Refresh the page to get updated connection status
+    await page.reload({ waitUntil: "networkidle0" });
+
+    // Click on the A2A agent
+    const agentCard = await page.evaluateHandle(() => {
+      const cards = document.querySelectorAll(
+        "[data-testid='agents-list-page-witness'] div[data-slot='card']"
+      );
+      for (const card of cards) {
+        if (card.textContent?.includes("A2A Test Agent")) {
+          return card;
+        }
+      }
+      return null;
+    });
+    await safeClickHandle(agentCard as ElementHandle<Element>);
+
+    // Wait for the chat input and send a message
+    await page.waitForSelector("textarea[name='message']", { timeout: 10000 });
+    await page.type("textarea[name='message']", "Hello agent");
+    await safeClickHandle(await page.waitForSelector("button[type='submit']"));
+
+    // Wait for the agent response
+    const response = await page.waitForSelector(
+      "[role='log'] > div > div:nth-child(2)",
+      { timeout: 15000 }
+    );
+    expect(response).to.exist;
     await page.close();
   });
 

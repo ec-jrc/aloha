@@ -35,6 +35,42 @@ export interface IntegrationEnvironment {
   stop: () => Promise<void>;
 }
 
+export async function startA2AAgentSampleProcess() {
+  const port = await getPort();
+
+  const server = execa("npx", ["tsx", "src/a2a-sample/server.ts"], {
+    env: {
+      PORT: port.toString(),
+    },
+  });
+
+  return await new Promise<Process>((resolve, reject) => {
+    server.catch((error) => reject(error));
+
+    if (server.stdout === null) return reject("Failed to start MCP server.");
+    let returned = false;
+    const portStr = port.toString();
+    server.stdout.on("data", (stream: Buffer) => {
+      const line = stream.toString();
+      console.log(line);
+      if (!returned && line.includes(portStr)) {
+        returned = true;
+        return resolve({
+          stop: async () => {
+            if (server.killed) return;
+            server.kill();
+          },
+          port,
+          mockDatabase: undefined,
+        });
+      }
+    });
+    server.stderr.on("data", (data: Buffer) => {
+      console.log(data.toString());
+    });
+  });
+}
+
 export async function startMcpEverythingServerProcess() {
   const port = await getPort();
 

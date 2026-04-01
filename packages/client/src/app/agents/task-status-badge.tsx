@@ -12,11 +12,24 @@ the Licence is distributed on an "AS IS" basis, WITHOUT WARRANTIES OR CONDITIONS
 OF ANY KIND, either express or implied. See the Licence for the specific language
 governing permissions and limitations under the Licence.
 */
-import { TaskState } from "@a2a-js/sdk";
 import { Badge } from "@/components/ui/badge";
 import { getTaskStatusDisplay } from "@/utils/a2a-content-extractor";
+import { A2ATaskStatusDisplayEvent } from "@/utils/a2a-event-transformer";
+import { Loader2 } from "lucide-react";
 
-export default function TaskStatusBadge({ status }: { status: TaskState }) {
-  const { label, variant } = getTaskStatusDisplay(status);
-  return <Badge variant={variant}>{label}</Badge>;
+export default function TaskStatusBadge({
+  event,
+}: {
+  event: A2ATaskStatusDisplayEvent;
+}) {
+  const { label, variant } = getTaskStatusDisplay(event.status);
+  return (
+    <Badge variant={variant}>
+      {label}
+
+      {event.streaming && (
+        <Loader2 className="inline-block ml-2 h-4 w-4 animate-spin" />
+      )}
+    </Badge>
+  );
 }

@@ -31,6 +31,7 @@ import { clientsRoutes } from "./clients";
 import { hubRouter } from "./hub";
 import { projectsRoutes } from "./projects";
 import { serverRoutes } from "./servers";
+import { serverProxyA2ARoutes } from "./servers-proxy-a2a";
 import { serverProxyRoutes } from "./servers-proxy-mcp";
 import { testbedAgentRoutes } from "./testbed-agents";
 import { testbedAgentProxyRoutes } from "./testbed-agents-proxy";
@@ -38,7 +39,6 @@ import { tokensRoutes } from "./tokens";
 import { userInfoRouter } from "./user-info";
 import { usersRoutes } from "./users";
 import { getUserWithIdFromRepository } from "./utils";
-import { serverProxyA2ARoutes } from "./servers-proxy-a2a";
 
 const logger = getLogger("EXPRESS-SETUP");
 

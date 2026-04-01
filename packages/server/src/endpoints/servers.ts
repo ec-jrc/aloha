@@ -29,7 +29,7 @@ import {
   permissionsManagerGenerator,
   verifyPermission,
 } from "./utils";
-import { assertFieldInObject } from "../utils/type-utils";
+import { assertDefined, assertFieldInObject } from "../utils/type-utils";
 import z from "zod";
 import { findCachedUsersById } from "../utils/cache.utils";
 
@@ -42,6 +42,12 @@ const fetchCache = () => injector().resolve("fetchCache");
 
 export function serverRoutes() {
   logger().debug("Registering server router");
+
+  async function reloadServer(id: string) {
+    const updatedServerOption = await repository().findById(id);
+    assertDefined(updatedServerOption);
+    await mcpManager().reloadServer(updatedServerOption);
+  }
 
   const router = crudGenerator({
     name: "server",
@@ -198,10 +204,14 @@ export function serverRoutes() {
           creator = loggedUser.id;
         }
 
-        return await repository().updateById(id, {
+        const success = await repository().updateById(id, {
           ...newServerOptions,
           creator,
         });
+
+        await reloadServer(id);
+
+        return success;
       },
       delete: async (req) => {
         assertFieldInObject(req.params, "id", z.string());
@@ -277,7 +287,7 @@ export function serverRoutes() {
         const result = await repository().addNewConnection(id, cid);
 
         if (result) {
-          server.options.connections?.push(cid);
+          await reloadServer(id);
           fetchCache().clear();
           res.status(204).end();
         } else {
@@ -330,27 +340,25 @@ export function serverRoutes() {
             .json({ error: "Must provide the id of the client to connect" });
           return;
         }
-        const server = mcpManager().getServer(id);
+        const server = await repository().findById(id);
         if (!server) {
           res.status(404).json({ error: "Server not found" });
           return;
         }
-        await verifyPermission(server.options, req, "write", true);
+        await verifyPermission(server, req, "write", true);
 
-        if (!server.options.connections?.some((sc) => sc === cid)) {
+        if (!server.connections?.some((sc) => sc === cid)) {
           res.status(204).end();
           return;
         }
-        const newConnections = server.options.connections?.filter(
-          (sc) => sc !== cid
-        );
+        const newConnections = server.connections?.filter((sc) => sc !== cid);
         const result = await repository().replaceConnections(
           id,
           newConnections
         );
 
         if (result) {
-          server.options.connections = newConnections;
+          await reloadServer(id);
           fetchCache().clear();
           res.status(204).end();
         } else {
