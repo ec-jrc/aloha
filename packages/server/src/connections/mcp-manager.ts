@@ -24,7 +24,8 @@ import MCPServer from "./mcp-server";
 import { isA2AAgent } from "../utils/a2a-utils";
 import { A2AServer } from "./a2a-server";
 
-const logger = getLogger("MCPMANAGER");
+const logger = getLogger("MCP-MANAGER");
+const MAX_AUTOCLOSE_CLIENT_TTL = 15 * 60 * 1000;
 
 class MCPManager {
   public static inject = ["connectionOptionsRepository"] as const;
@@ -33,11 +34,17 @@ class MCPManager {
   private serversByPath: Map<string, MCPServer | A2AServer> = new Map();
   private startDate: Date | null = null;
   private pingHandle: ReturnType<typeof setInterval> | null = null;
+  private autoCloseClients: {
+    [id: string]: { client: MCPClient; timestamp: number; instanceId: string };
+  } = {};
 
   public constructor(
     private connectionOptionsRepository: ConnectionOptionsRepository
-  ) {}
-
+  ) {
+    setInterval(() => {
+      void this.closeAutoCloseClients();
+    }, 60 * 1000);
+  }
   public getStartDate() {
     return this.startDate;
   }
@@ -273,6 +280,49 @@ class MCPManager {
       tokenSetProvider
     );
     await connection.connectClient();
+  }
+
+  cacheAutoCloseClient(instanceId: string, autoCloseClient: MCPClient) {
+    if (!instanceId) {
+      throw new Error(`Unable to store temp client without a sessionId`);
+    }
+    this.autoCloseClients[instanceId] = {
+      client: autoCloseClient,
+      timestamp: Date.now(),
+      instanceId,
+    };
+  }
+
+  getAutoCloseClient(id: string): MCPClient | undefined {
+    return this.autoCloseClients[id]?.client;
+  }
+
+  private async closeAutoCloseClients() {
+    const now = Date.now();
+
+    const clientsToClose = Object.entries(this.autoCloseClients)
+      .map(([key, e]) => {
+        if (now - e.timestamp > MAX_AUTOCLOSE_CLIENT_TTL) {
+          delete this.autoCloseClients[key];
+          return e.client;
+        } else {
+          return undefined;
+        }
+      })
+      .filter((e) => e !== undefined);
+
+    await Promise.all(
+      clientsToClose.map(async (e) => {
+        try {
+          logger().child({ clientId: e.id }).debug(`Autoclose client`);
+          await e.close();
+        } catch (err) {
+          logger()
+            .child({ clientId: e.id })
+            .error(`Unable to close the client`, err);
+        }
+      })
+    );
   }
 }
 

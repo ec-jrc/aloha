@@ -290,7 +290,7 @@ export class AlohaMCPServer implements MCPServer {
       },
       CallToolResultSchema
     );
-    return result.content
+    return result.response.content
       .filter((c) => c.type == "text")
       .map((e) => ({
         type: e.type,

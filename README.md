@@ -1,7 +1,5 @@
 # ALOHA
 
-> NOTE: https://github.com/ec-jrc/aloha is mirrored repository. Issues and Pull requests will still be evaluated, but consider sending them to [https://code.europa.eu/aloha/aloha](https://code.europa.eu/aloha/aloha)
-
 Aloha (AI Logical Orchestrator Hub for Agents) is a centralized hub to manage and interconnect data and AI Agents. Built on the [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) and [Agent-to-Agent (A2A) protocol](https://github.com/a2a-js/sdk), it enables communication between applications, MCP servers, and AI agents, enhancing tool discoverability and interoperability.
 
 ALOHA provides out-of-the-box functionality to test MCP servers, connect A2A agents, and run demo agents directly in your browser.

@@ -197,6 +197,30 @@ export default function MCPClientDetailsPage() {
                 className="max-w-full"
               />
             </div>
+            {connection.isConnected && (
+              <div className="space-y-2 mt-6">
+                <dt className="text-sm font-semibold uppercase tracking-wide mb-2">
+                  Session state support
+                </dt>
+                {connection.isStateful ? (
+                  <div className="flex items-center">
+                    The client is
+                    <span className="ml-2 inline-flex items-center px-3 py-1.5 rounded-full text-sm font-medium bg-sky-50 text-sky-700">
+                      <span className="w-2 h-2 mr-1.5 rounded-full bg-sky-500" />
+                      stateful
+                    </span>
+                  </div>
+                ) : (
+                  <div className="flex items-center">
+                    The client is
+                    <span className="ml-2 inline-flex items-center px-3 py-1.5 rounded-full text-sm font-medium bg-emerald-100 text-emerald-600">
+                      <span className="w-2 h-2 mr-1.5 rounded-full bg-emerald-400" />
+                      stateless
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
             <div className="mt-6">
               {connection.id !== undefined && (
                 <OIDCRegistration item={connection}></OIDCRegistration>

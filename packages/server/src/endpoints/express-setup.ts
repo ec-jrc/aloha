@@ -118,7 +118,48 @@ export async function expressSetup() {
     store: injector().resolve("sessionStore"),
   };
   app.set("trust proxy", 1);
-  app.use(session(sessionConfig));
+
+  const sessionMiddleware = session(sessionConfig);
+  app.use((req, res, next) => {
+    if (req.path.startsWith("/api/mcp/")) {
+      req.session = {
+        id: `fake-${Date()}`,
+        cookie: {
+          maxAge: 86400000,
+          originalMaxAge: 86400000,
+          expires: new Date(Date.now() + 86400000),
+          httpOnly: true,
+          path: "/",
+          sameSite: "lax",
+          secure: false,
+        },
+        regenerate: (cb) => {
+          cb(null);
+          return req.session;
+        },
+        destroy: (cb) => {
+          cb(null);
+          return req.session;
+        },
+        reload: (cb) => {
+          cb(null);
+          return req.session;
+        },
+        save: (cb) => {
+          cb?.call(req.session, null);
+          return req.session;
+        },
+        resetMaxAge: () => {
+          return req.session;
+        },
+        touch: () => {
+          return req.session;
+        },
+      };
+      return next();
+    }
+    return sessionMiddleware(req, res, next);
+  });
 
   // Load authentication plugin
   const standardPlugins = await loadAuthPlugins();

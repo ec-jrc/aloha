@@ -89,6 +89,7 @@ export function clientsRoutes() {
               const connection = mcpManager().getConnection(id, MCPClient);
               return {
                 ...server,
+                isStateful: connection?.isStateful,
                 id: id,
                 isConnected: connection ? connection.isConnected : false,
                 resources: connection ? connection.resources.length : 0,
@@ -130,6 +131,7 @@ export function clientsRoutes() {
           const result: endpoints_schemas.MCPConnectionDetail = {
             ...opts,
             id,
+            isStateful: connection.isStateful,
             isConnected: connection.isConnected,
             resources: connection.resources,
             resourceTemplates: connection.resourceTemplates,
@@ -569,15 +571,37 @@ export function clientsRoutes() {
           return;
       }
       try {
-        const newClient = new MCPClient(
-          client.connectionOptions,
-          buildTokenSetProviderFromRequest(req)
-        );
+        const userSessionClientId =
+          req.session.id + "@@@" + client.connectionOptions.id;
+
+        const cachedClient =
+          mcpManager().getAutoCloseClient(userSessionClientId);
+
+        const newClient =
+          cachedClient ||
+          new MCPClient(
+            client.connectionOptions,
+            buildTokenSetProviderFromRequest(req)
+          );
         try {
           const response = await newClient.sendRequest(clientRequest, schema);
-          res.json(response).end();
+          if (newClient.isStateful) {
+            mcpManager().cacheAutoCloseClient(userSessionClientId, newClient);
+          }
+
+          res
+            .json({
+              response,
+              newSessionCreated:
+                newClient.isStateful === false
+                  ? undefined
+                  : cachedClient === undefined,
+            })
+            .end();
         } finally {
-          await newClient.close();
+          if (!newClient.isStateful) {
+            await newClient.close();
+          }
         }
       } catch (error) {
         log.error(error);

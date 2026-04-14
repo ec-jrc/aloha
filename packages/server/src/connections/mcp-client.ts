@@ -60,8 +60,6 @@ export default class MCPClient implements RemoteClient {
   public prompts: Prompt[] = [];
   public tools: Tool[] = [];
 
-  protected _isStateful: boolean = false;
-
   private _lastListRefresh: number = 0;
 
   // private transport: Transport;
@@ -77,12 +75,16 @@ export default class MCPClient implements RemoteClient {
     this.client = this.constructClient();
   }
 
+  public get sessionId() {
+    return this.client.transport?.sessionId;
+  }
+
   public get isConnected() {
     return this.connectPromise?.currentStatus() || false;
   }
 
   public get isStateful() {
-    return this._isStateful;
+    return this.client.transport?.sessionId !== undefined;
   }
 
   public get id() {
@@ -92,6 +94,8 @@ export default class MCPClient implements RemoteClient {
   public async connectClient() {
     const log = logger().child({ clientId: this.connectionOptions.id });
     if (this.connectionOptions.disabled) {
+      log.debug("Connection has been disabled");
+
       this.connectPromise = promisedStatus(false, Promise.resolve(false));
     } else {
       if (this.connectPromise) {
@@ -167,10 +171,16 @@ export default class MCPClient implements RemoteClient {
 
   public async close() {
     if (this.client) {
+      if (
+        this.sessionId &&
+        this.client.transport instanceof StreamableHTTPClientTransport
+      ) {
+        await this.client.transport.terminateSession();
+      }
+      await this.client.transport?.close();
       await this.client.close();
     }
     this.connectPromise = null;
-    // if (this.transport) await this.transport.close();
   }
 
   public async sendRequest<T extends z.ZodType<unknown>>(
@@ -191,40 +201,62 @@ export default class MCPClient implements RemoteClient {
 
   private async refreshLists() {
     const log = logger().child({ clientId: this.connectionOptions.id });
+
     const capabilities = this.client.getServerCapabilities();
 
+    const requests: Promise<void>[] = [];
+
     if (capabilities?.resources) {
-      try {
-        const { resources } = await this.client.listResources();
-        this.resources = resources;
-      } catch (error) {
-        log.debug(error);
-      }
-      try {
-        const { resourceTemplates } = await this.client.listResourceTemplates();
-        this.resourceTemplates = resourceTemplates;
-      } catch (error) {
-        log.debug(error);
-      }
+      requests.push(
+        this.client
+          .listResources()
+          .then(({ resources }) => {
+            this.resources = resources;
+          })
+          .catch((error) => {
+            log.debug(error);
+          })
+      );
+
+      requests.push(
+        this.client
+          .listResourceTemplates()
+          .then(({ resourceTemplates }) => {
+            this.resourceTemplates = resourceTemplates;
+          })
+          .catch((error) => {
+            log.debug(error);
+          })
+      );
     }
 
     if (capabilities?.prompts) {
-      try {
-        const { prompts } = await this.client.listPrompts();
-        this.prompts = prompts;
-      } catch (error) {
-        log.debug(error);
-      }
+      requests.push(
+        this.client
+          .listPrompts()
+          .then(({ prompts }) => {
+            this.prompts = prompts;
+          })
+          .catch((error) => {
+            log.debug(error);
+          })
+      );
     }
 
     if (capabilities?.tools) {
-      try {
-        const { tools } = await this.client.listTools();
-        this.tools = tools;
-      } catch (error) {
-        log.debug(error);
-      }
+      requests.push(
+        this.client
+          .listTools()
+          .then(({ tools }) => {
+            this.tools = tools;
+          })
+          .catch((error) => {
+            log.debug(error);
+          })
+      );
     }
+
+    await Promise.all(requests);
   }
 
   private constructClient() {
@@ -364,14 +396,15 @@ export default class MCPClient implements RemoteClient {
     }
 
     // Add fetch wrapper to detect session headers
-    options.fetch = async (url, init) => {
-      const response = await fetch(url, init);
-      const sessionId = response.headers.get("mcp-session-id");
-      if (sessionId) {
-        this._isStateful = true;
-      }
-      return response;
-    };
+    // options.fetch = async (url, init) => {
+    //   const response = await fetch(url, init);
+    //   const sessionId = response.headers.get("mcp-session-id");
+    //   if (sessionId) {
+    //     this._isStateful = true;
+    //     this._sessionId = sessionId;
+    //   }
+    //   return response;
+    // };
 
     return options;
   }

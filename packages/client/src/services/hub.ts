@@ -30,10 +30,15 @@ export async function restartHub() {
   });
 }
 
+export interface ChangelogSection {
+  title: string;
+  items: string[];
+}
+
 export interface ChangelogVersion {
   version: string;
   date: string;
-  content: string[];
+  sections: ChangelogSection[];
 }
 
 export async function getChangelog(): Promise<ChangelogVersion[]> {
@@ -69,11 +74,18 @@ export function parseChangelogText(changelogText: string): ChangelogVersion[] {
     const content = versionSections[i + 2]?.trim() || "";
 
     if (version && date) {
-      versions.push({
-        version,
-        date,
-        content: content.split("\n").filter((line) => line.startsWith("-")),
-      });
+      const sections: ChangelogSection[] = [];
+      const lines = content.split("\n");
+
+      for (const line of lines) {
+        if (line.startsWith("### ")) {
+          sections.push({ title: line.replace("### ", ""), items: [] });
+        } else if (line.startsWith("- ") && sections.length > 0) {
+          sections[sections.length - 1].items.push(line.replace("- ", ""));
+        }
+      }
+
+      versions.push({ version, date, sections });
     }
   }
 

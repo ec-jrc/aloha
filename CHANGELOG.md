@@ -1,5 +1,17 @@
 # CHANGELOG
 
+## [3.0.2] - 04 Apr 2026
+
+### Added
+
+- Updated the MCP inspector components to the latest version
+
+### Fixed
+
+- Resolved bug with session management in MCP proxy to greatly improve management
+- Resolved issues with session reflection in MCP proxy
+- Improved the changelog
+
 ## [3.0.1] - 01 Apr 2026
 
 ### Fixed

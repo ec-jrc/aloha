@@ -164,7 +164,7 @@ export async function sendMCPClientRequest<T extends z.ZodType>(
   id: string,
   request: ClientRequest,
   schema: T
-): Promise<z.output<T>> {
+): Promise<{ response: z.output<T>; newSessionCreated: boolean | undefined }> {
   const response = await customFetch(
     "Send MCP Request to client",
     `${apiClientsUrl}/${id}/sendMCPClientRequest`,
@@ -174,8 +174,11 @@ export async function sendMCPClientRequest<T extends z.ZodType>(
       headers: { "Content-Type": "application/json" },
     }
   );
-  const result = await response.json();
-  schema.parse(result);
+  const result: {
+    response: z.output<T>;
+    newSessionCreated: boolean | undefined;
+  } = await response.json();
+  schema.parse(result.response);
   return result;
 }
 

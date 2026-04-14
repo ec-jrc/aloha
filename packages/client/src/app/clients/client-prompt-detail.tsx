@@ -58,6 +58,9 @@ export default function MCPClientPromptDetail({
     useState<GetPromptResult | null>(null);
   const [errorMessage, setErrorMessage] = useState<string>("");
   const [open, setOpen] = useState(false);
+  const [newSessionCreated, setNewSessionCreated] = useState<
+    boolean | undefined
+  >(undefined);
 
   const handleCompletion = useCallback(
     async (
@@ -84,7 +87,7 @@ export default function MCPClientPromptDetail({
           },
           CompleteResultSchema
         );
-        return response?.completion.values || [];
+        return response?.response.completion.values || [];
       } catch (e: unknown) {
         console.error(e);
         setCompletionsSupported(false);
@@ -125,11 +128,13 @@ export default function MCPClientPromptDetail({
           },
           GetPromptResultSchema
         );
-        setResourceContent(response);
+        setResourceContent(response.response);
+        setNewSessionCreated(response.newSessionCreated);
       } catch (err) {
         console.log(err);
         setErrorMessage(exceptionToMessage(err));
         setResourceContent(null);
+        setNewSessionCreated(undefined);
       }
     },
     [clientId]
@@ -141,6 +146,7 @@ export default function MCPClientPromptDetail({
       setPromptArgs({});
       clearCompletions();
       setErrorMessage("");
+      setNewSessionCreated(undefined);
     } else {
       setResourceContent(null);
     }
@@ -205,9 +211,26 @@ export default function MCPClientPromptDetail({
                 )}
               </div>
             ))}
-            {resourceContent ? (
-              <JsonView data={resourceContent}></JsonView>
-            ) : errorMessage ? (
+            {resourceContent && (
+              <>
+                {newSessionCreated !== undefined && (
+                  <div className="text-sm text-foreground my-2">
+                    {newSessionCreated === true && (
+                      <span className="text-green-600">
+                        A new session has been created
+                      </span>
+                    )}
+                    {newSessionCreated === false && (
+                      <span className="text-amber-600">
+                        A previous session has been reused
+                      </span>
+                    )}
+                  </div>
+                )}
+                <JsonView data={resourceContent}></JsonView>
+              </>
+            )}
+            {errorMessage ? (
               <>
                 <span className="text-red-600 font-semibold">Error</span>
                 <div>{errorMessage}</div>

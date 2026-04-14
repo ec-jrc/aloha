@@ -112,7 +112,14 @@ class ServerSession {
   public async close(closeTransport: boolean) {
     if (closeTransport) await this.server.transport?.close();
     await this.server.close();
-    await Promise.all(Object.values(this.clients).map((c) => c.close()));
+    await Promise.all(
+      Object.values(this.clients)
+        .filter((c) => c.isStateful) // close only stateful clients, the stateless one are shared
+        .map(async (c) => {
+          logger().child({ clientId: c.id }).debug("Closing session client");
+          await c.close();
+        })
+    );
   }
 }
 
@@ -157,7 +164,14 @@ class MCPServer {
         const returnConnections: (MCPClient | A2AClient)[] = [];
         const initPromises: Promise<MCPClient>[] = [];
 
+        const connectedClientsForSession =
+          this.serverSessions[sessionId].clients;
+
         for (const c of connections) {
+          if (connectedClientsForSession[c.id]) {
+            returnConnections.push(connectedClientsForSession[c.id]);
+            continue;
+          }
           if (c.connectionOptions.serverProtocol !== "http") {
             returnConnections.push(c);
             continue;

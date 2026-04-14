@@ -56,6 +56,9 @@ export default function MCPClientResourceDetail({
   const [errorMessage, setErrorMessage] = useState<string>("");
   const [open, setOpen] = useState(false);
   const [uriToFill, setUriToFill] = useState<string>("");
+  const [newSessionCreated, setNewSessionCreated] = useState<
+    boolean | undefined
+  >(undefined);
 
   const readResource = async (uri: string) => {
     try {
@@ -67,16 +70,19 @@ export default function MCPClientResourceDetail({
         },
         ReadResourceResultSchema
       );
-      setResourceContent(response);
+      setResourceContent(response.response);
+      setNewSessionCreated(response.newSessionCreated);
     } catch (err) {
       console.log(err);
       setErrorMessage(exceptionToMessage(err));
       setResourceContent(null);
+      setNewSessionCreated(undefined);
     }
   };
   const onOpenChange = (opening: boolean) => {
     setOpen(opening);
     if (opening) {
+      setNewSessionCreated(undefined);
       const resourceTemplate = ResourceTemplateSchema.safeParse(resource);
       const safeResource = ResourceSchema.safeParse(resource);
       if (resourceTemplate.success) {
@@ -129,9 +135,26 @@ export default function MCPClientResourceDetail({
                 </Button>
               </>
             )}
-            {resourceContent ? (
-              <JsonView data={resourceContent}></JsonView>
-            ) : errorMessage ? (
+            {resourceContent && (
+              <>
+                {newSessionCreated !== undefined && (
+                  <div className="text-sm text-foreground my-2">
+                    {newSessionCreated === true && (
+                      <span className="text-green-600">
+                        A new session has been created
+                      </span>
+                    )}
+                    {newSessionCreated === false && (
+                      <span className="text-amber-600">
+                        A previous session has been reused
+                      </span>
+                    )}
+                  </div>
+                )}
+                <JsonView data={resourceContent}></JsonView>
+              </>
+            )}
+            {errorMessage ? (
               <>
                 <span className="text-red-600 font-semibold">Error</span>
                 <div>{errorMessage}</div>

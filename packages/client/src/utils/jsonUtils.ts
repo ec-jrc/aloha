@@ -1,18 +1,3 @@
-/*
-Copyright (C) 2025 European Union
-
-Licensed under the EUPL, Version 1.2 or – as soon they will be approved by the
-European Commission – subsequent versions of the EUPL (the “Licence”);
-You may not use this work except in compliance with the Licence.
-You may obtain a copy of the Licence at:
-* https://joinup.ec.europa.eu/collection/eupl/eupl-text-eupl-12 *
-
-Unless required by applicable law or agreed to in writing, software distributed under
-the Licence is distributed on an “AS IS” basis, WITHOUT WARRANTIES OR CONDITIONS
-OF ANY KIND, either express or implied. See the Licence for the specific language
-governing permissions and limitations under the Licence.
-*/
-
 export type JsonValue =
   | string
   | number
@@ -22,20 +7,53 @@ export type JsonValue =
   | JsonValue[]
   | { [key: string]: JsonValue };
 
+export type JsonSchemaConst = {
+  const: JsonValue;
+  title?: string;
+  description?: string;
+};
+
 export type JsonSchemaType = {
-  type:
+  type?:
     | "string"
     | "number"
     | "integer"
     | "boolean"
     | "array"
     | "object"
-    | "null";
+    | "null"
+    | (
+        | "string"
+        | "number"
+        | "integer"
+        | "boolean"
+        | "array"
+        | "object"
+        | "null"
+      )[];
+  title?: string;
   description?: string;
-  required?: boolean;
+  required?: string[];
   default?: JsonValue;
   properties?: Record<string, JsonSchemaType>;
   items?: JsonSchemaType;
+  // Array validation constraints
+  minItems?: number;
+  maxItems?: number;
+  minimum?: number;
+  maximum?: number;
+  minLength?: number;
+  maxLength?: number;
+  nullable?: boolean;
+  pattern?: string;
+  format?: string;
+  enum?: string[];
+  // Non-standard legacy support: titles for enum values
+  enumNames?: string[];
+  const?: JsonValue;
+  oneOf?: (JsonSchemaType | JsonSchemaConst)[];
+  anyOf?: (JsonSchemaType | JsonSchemaConst)[];
+  $ref?: string;
 };
 
 export type JsonObject = { [key: string]: JsonValue };
@@ -52,18 +70,29 @@ export type DataType =
   | "array"
   | "null";
 
+/**
+ * Determines the specific data type of a JSON value
+ * @param value The JSON value to analyze
+ * @returns The specific data type including "array" and "null" as distinct types
+ */
 export function getDataType(value: JsonValue): DataType {
   if (Array.isArray(value)) return "array";
   if (value === null) return "null";
   return typeof value;
 }
 
+/**
+ * Attempts to parse a string as JSON, only for objects and arrays
+ * @param str The string to parse
+ * @returns Object with success boolean and either parsed data or original string
+ */
 export function tryParseJson(str: string): {
   success: boolean;
   data: JsonValue;
 } {
-  const trimmed = str.trim();
+  const trimmed = str?.trim();
   if (
+    trimmed &&
     !(trimmed.startsWith("{") && trimmed.endsWith("}")) &&
     !(trimmed.startsWith("[") && trimmed.endsWith("]"))
   ) {

@@ -36,6 +36,7 @@ export const ResponseError = z.object({
 
 export const MCPConnectionStatusSchema = MCPConnectionOptionsWithIdSchema.and(
   z.object({
+    isStateful: z.boolean().optional(),
     isConnected: z.boolean(),
     resources: z.number(),
     resourceTemplates: z.number(),
@@ -50,6 +51,7 @@ export type MCPConnectionsList = z.infer<typeof MCPConnectionsListSchema>;
 
 export const MCPConnectionDetailSchema = MCPConnectionOptionsWithIdSchema.and(
   z.object({
+    isStateful: z.boolean().optional(),
     isConnected: z.boolean(),
     resources: z.array(ResourceSchema),
     resourceTemplates: z.array(ResourceTemplateSchema),

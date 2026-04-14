@@ -66,14 +66,21 @@ export default function ChangelogPage() {
             )}
           </div>
           <p className="text-gray-500 text-sm mb-4">{c.date}</p>
-          <ul className="my-2 ml-6">
-            {c.content.map((change, index) => (
-              <li key={index}>
-                <span className="text-gray-500 mr-4">—</span>
-                {change.replace("- ", "")}
-              </li>
+          <div className="my-2 ml-6">
+            {c.sections.map((section) => (
+              <div key={section.title}>
+                <h3 className="text-md font-semibold text-gray-700 mt-3 mb-1">
+                  {section.title}
+                </h3>
+                {section.items.map((item, index) => (
+                  <li key={index} className="list-none">
+                    <span className="text-gray-500 mr-4">•</span>
+                    {item}
+                  </li>
+                ))}
+              </div>
             ))}
-          </ul>
+          </div>
         </div>
       ))}
     </div>
