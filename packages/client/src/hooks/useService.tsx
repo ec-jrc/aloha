@@ -15,8 +15,8 @@ governing permissions and limitations under the Licence.
 
 /* eslint-disable react-hooks/exhaustive-deps */
 import { exceptionToMessage } from "@/utils/type-utils";
-import { isEqual } from "@react-hookz/deep-equal";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { isEqual } from "@ver0/deep-equal";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { NavigateFunction, useNavigate } from "react-router";
 import {
   EMPTY,
@@ -68,22 +68,24 @@ export function useService<T>(
   const subscriptionRef = useRef<Subscription | null>(null);
   const isVisibleRef = useRef(!document.hidden);
 
-  const internalServiceFunction = useCallback(async () => {
-    try {
-      const result = await serviceFunction(...deps);
-      setResult((prevResult) => {
-        // Only update if the result has actually changed
-        if (!isEqual(prevResult, result)) {
-          return result;
-        }
-        return prevResult;
-      });
-    } catch (e) {
-      await manageFetchError(e, navigate);
-    } finally {
-      setLoading(false);
-    }
-  }, [serviceFunction]);
+  const internalServiceFunction = useCallback(
+    async (currentDeps: React.DependencyList) => {
+      try {
+        const result = await serviceFunction(...currentDeps);
+        setResult((prevResult) => {
+          if (!isEqual(prevResult, result)) {
+            return result;
+          }
+          return prevResult;
+        });
+      } catch (e) {
+        await manageFetchError(e, navigate);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [serviceFunction]
+  );
 
   useEffect(() => {
     if (conditionalCallDeps.some((e) => !e)) {
@@ -114,7 +116,7 @@ export function useService<T>(
         exhaustMap(() => {
           // Only proceed if the document is visible
           if (isVisibleRef.current) {
-            return internalServiceFunction();
+            return internalServiceFunction(deps);
           }
           return EMPTY;
         }),
@@ -146,12 +148,11 @@ export function useService<T>(
         );
       };
     } else {
-      // Single fetch behavior (existing implementation)
       setLoading(true);
       if (import.meta.env.DEV) {
-        setTimeout(() => internalServiceFunction(), 2000);
+        setTimeout(() => internalServiceFunction(deps), 2000);
       } else {
-        internalServiceFunction();
+        internalServiceFunction(deps);
       }
     }
   }, [...deps, ...conditionalCallDeps, refreshInterval]);
@@ -160,9 +161,9 @@ export function useService<T>(
     if (refreshInterval) {
       forceFetchRef.current?.next(true);
     } else {
-      internalServiceFunction();
+      internalServiceFunction(deps);
     }
-  }, [internalServiceFunction, forceFetchRef]);
+  }, [internalServiceFunction, forceFetchRef, deps]);
 
   return [loading, result, setResult, forceFetchFunction];
 }

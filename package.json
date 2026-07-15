@@ -4,14 +4,14 @@
   "description": "AI Logical Orchestrator Hub for Agents",
   "private": true,
   "devDependencies": {
-    "@fsouza/prettierd": "^0.26.2",
-    "@types/node": "^22.17.1",
+    "@fsouza/prettierd": "^0.27.0",
+    "@types/node": "^22.19.18",
     "lerna": "^8.2.3",
-    "prettier": "^3.7.4",
+    "prettier": "^3.8.3",
     "prettier-plugin-organize-class-members": "1.0.0-beta.6",
-    "prettier-plugin-organize-imports": "^4.2.0",
+    "prettier-plugin-organize-imports": "^4.3.0",
     "prettier-plugin-sort-members": "^0.2.4",
-    "typescript": "^5.9.2"
+    "typescript": "^6.0.3"
   },
   "workspaces": [
     "packages/*",

@@ -35,10 +35,6 @@ export class MongoDBGenericRepository<T extends { [k: string]: unknown }>
 {
   private _collectionName: string;
 
-  public get collectionName() {
-    return this._collectionName;
-  }
-
   constructor(
     collectionName: string,
     protected injector: Injector<DatabaseProvider>
@@ -46,26 +42,8 @@ export class MongoDBGenericRepository<T extends { [k: string]: unknown }>
     this._collectionName = collectionName;
   }
 
-  protected getCollection(): Collection<T> {
-    return this.injector
-      .resolve("getDatabase")()
-      .collection<T>(this.collectionName);
-  }
-
-  protected transformOnRead(e: T & schemas.WithIdBase): T & schemas.WithIdBase {
-    return e;
-  }
-  protected transformOnWrite(e: Partial<T>): Partial<T> {
-    return { ...e };
-  }
-
-  protected mapIdField<U extends { [k: string]: unknown } = T>(
-    item: WithId<U>
-  ): U & schemas.WithIdBase {
-    const result = { ...item, id: item._id.toString() } as U &
-      schemas.WithIdBase;
-    delete result._id;
-    return result;
+  public get collectionName() {
+    return this._collectionName;
   }
 
   async findByPattern(item: Partial<T>): Promise<(T & schemas.WithIdBase)[]> {
@@ -90,6 +68,8 @@ export class MongoDBGenericRepository<T extends { [k: string]: unknown }>
 
   async create(item: T): Promise<T & schemas.WithIdBase> {
     delete item._id;
+    delete item.id;
+
     const result = await this.getCollection().insertOne(
       this.transformOnWrite(item) as OptionalUnlessRequiredId<T>
     );
@@ -115,5 +95,26 @@ export class MongoDBGenericRepository<T extends { [k: string]: unknown }>
       _id: new ObjectId(id) as Filter<T>,
     });
     return result.deletedCount > 0;
+  }
+  protected getCollection(): Collection<T> {
+    return this.injector
+      .resolve("getDatabase")()
+      .collection<T>(this.collectionName);
+  }
+
+  protected transformOnRead(e: T & schemas.WithIdBase): T & schemas.WithIdBase {
+    return e;
+  }
+  protected transformOnWrite(e: Partial<T>): Partial<T> {
+    return { ...e };
+  }
+
+  protected mapIdField<U extends { [k: string]: unknown } = T>(
+    item: WithId<U>
+  ): U & schemas.WithIdBase {
+    const result = { ...item, id: item._id.toString() } as U &
+      schemas.WithIdBase;
+    delete result._id;
+    return result;
   }
 }

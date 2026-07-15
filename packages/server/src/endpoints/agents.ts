@@ -123,6 +123,7 @@ export function agentRoutes() {
                   name: connection?.connectionOptions.name,
                   isConnected: connection?.isConnected,
                   type: connection.connectionOptions.type,
+                  versioningInfo: connection?.connectionOptions.versioningInfo,
                 };
               })
               .filter((sc) => sc !== null),

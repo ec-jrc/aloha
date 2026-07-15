@@ -27,6 +27,35 @@ import z from "zod";
 const apiClientsUrl = "/api/client";
 // const apiServersUrl = "/api/server"
 
+export async function getAllConnectionVersions(
+  id: string
+): Promise<schemas.MCPBaseConnectionWithId[]> {
+  const response = await customFetch(
+    "Create new client version",
+    `${apiClientsUrl}/${id}/versions`,
+    {
+      method: "GET",
+    }
+  );
+  const result = z
+    .array(schemas.MCPBaseConnectionWithIdSchema)
+    .parse(await response.json());
+
+  return result;
+}
+
+export async function createNewClientVersion(id: string) {
+  const response = await customFetch(
+    "Create new client version",
+    `${apiClientsUrl}/${id}/newVersion`,
+    {
+      method: "POST",
+    }
+  );
+  const result = z.object({ id: z.string() }).parse(await response.json());
+  return result;
+}
+
 export async function getConnectionList() {
   const response = await customFetch("Get clients list", `${apiClientsUrl}/`);
   const data: endpoints_schemas.MCPConnectionsList = await response.json();

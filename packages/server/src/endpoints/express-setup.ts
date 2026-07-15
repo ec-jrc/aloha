@@ -29,6 +29,7 @@ import { setupOptionalOAuthProxy } from "../middleware/oidc/oidc-support";
 import { agentRoutes } from "./agents";
 import { clientsRoutes } from "./clients";
 import { hubRouter } from "./hub";
+import { pluginsRoutes } from "./plugins";
 import { projectsRoutes } from "./projects";
 import { serverRoutes } from "./servers";
 import { serverProxyA2ARoutes } from "./servers-proxy-a2a";
@@ -39,6 +40,7 @@ import { tokensRoutes } from "./tokens";
 import { userInfoRouter } from "./user-info";
 import { usersRoutes } from "./users";
 import { getUserWithIdFromRepository } from "./utils";
+import { requestContext } from "../middleware/request-context";
 
 const logger = getLogger("EXPRESS-SETUP");
 
@@ -214,7 +216,12 @@ export async function expressSetup() {
   // Apply routes
   log.info("Registering API routes");
 
+  app.use((req, _res, next) => {
+    requestContext.run(req, next);
+  });
+
   app.use("/api/hub/", hubRouter());
+  app.use("/api/plugins/", await pluginsRoutes());
   app.use("/api/user-info/", userInfoRouter());
   app.use("/api/a2a/", serverProxyA2ARoutes());
   app.use("/api/mcp/", serverProxyRoutes());

@@ -23,6 +23,7 @@ import { provideOIDC } from "./provide-oidc";
 import { provideSessionStore } from "./provide-session-store";
 
 import { authentication_strategy, logger, schemas } from "aloha-shared";
+import { providePlatformPlugins } from "./provide-platform-plugins";
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 const unusedRefsRequiredBuTheCompiler = [
@@ -31,20 +32,24 @@ const unusedRefsRequiredBuTheCompiler = [
   authentication_strategy,
 ];
 
-let defaultInjector = provideMcpManager(
-  provideSessionStore(
-    provideDatabase(
-      provideLogger(
-        provideOIDC(provideEnvVars(provideCaches(createInjector())))
+let defaultInjector = providePlatformPlugins(
+  provideMcpManager(
+    provideSessionStore(
+      provideDatabase(
+        provideLogger(
+          provideOIDC(provideEnvVars(provideCaches(createInjector())))
+        )
       )
     )
   )
 ).provideValue("test", false);
 
-export function replaceInjector(newInjector: typeof defaultInjector) {
+export type AlohaInjector = typeof defaultInjector;
+
+export function replaceInjector(newInjector: AlohaInjector) {
   defaultInjector = newInjector;
 }
 
-export function injector() {
+export function injector(): AlohaInjector {
   return defaultInjector;
 }

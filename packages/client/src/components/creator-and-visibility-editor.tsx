@@ -26,7 +26,8 @@ import VisibilityEditDialog from "./visibility-edit-dialog";
 import { UserContext } from "@/context/contexes";
 import { usePermissionChecker } from "@/hooks/use-permission-checker";
 // import { Badge } from "./ui/badge";
-import { UserIcon, EyeIcon, PencilIcon } from "@heroicons/react/16/solid";
+import { UserIcon, EyeIcon } from "@heroicons/react/16/solid";
+import { Pencil } from "lucide-react";
 import { getProjectsList } from "@/services/projects";
 import { isDefined } from "@/utils/type-utils";
 
@@ -175,7 +176,7 @@ export function CreatorAndVisibilityEditor({
                   data-testid="edit-owner-button-witness"
                   className="flex items-center gap-1 px-2 py-2 text-xs font-medium bg-blue-100 rounded-md transition-colors duration-150"
                 >
-                  <PencilIcon className="w-3 h-3" />
+                  <Pencil className="w-3 h-3" />
                   Edit
                 </button>
               }
@@ -237,7 +238,7 @@ export function CreatorAndVisibilityEditor({
                   data-testid="visibility-edit-button-witness"
                   className="flex items-center gap-1 px-2 py-2 text-xs font-medium bg-blue-100 rounded-md transition-colors duration-150"
                 >
-                  <PencilIcon className="w-3 h-3" />
+                  <Pencil className="w-3 h-3" />
                   Edit
                 </button>
               }

@@ -29,9 +29,9 @@ import {
 import { useService } from "@/hooks/useService";
 import {
   DocumentPlusIcon,
-  PencilIcon,
   TrashIcon,
 } from "@heroicons/react/16/solid";
+import { Pencil } from "lucide-react";
 import { authentication_strategy, schemas } from "aloha-shared";
 import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -135,7 +135,7 @@ export default function UsersListPage() {
           disabled={!canManageUsers}
           data-testid="edit-user-button-witness"
         >
-          <PencilIcon />
+          <Pencil />
         </Button>
       </UserForm>
     );

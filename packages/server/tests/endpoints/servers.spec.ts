@@ -208,6 +208,7 @@ describe("serverRoutes", () => {
 
   describe("POST /:id/_connect/:cid", () => {
     it("should associate a client to a server", async () => {
+      deps.serverOptionsRepository.findById.resolves(serverWithId);
       deps.mcpManager.getServer.returns({ options: { ...serverWithId, connections: [] } });
       deps.mcpManager.getConnection.returns({ connectionOptions: { ...validServer, creator: "user-1", visibility: schemas.Visibility.Public } });
       const res = await http(app).post("/api/servers/s1/_connect/c1");
@@ -237,6 +238,7 @@ describe("serverRoutes", () => {
 
   describe("POST /:id/_disconnect/:cid", () => {
     it("should dissociate a client from a server", async () => {
+      deps.serverOptionsRepository.findById.resolves({ ...serverWithId, connections: ["c1"] });
       deps.mcpManager.getServer.returns({ options: { ...serverWithId, connections: ["c1"] } });
       const res = await http(app).post("/api/servers/s1/_disconnect/c1");
       expect(res.status).to.equal(204);
@@ -244,6 +246,7 @@ describe("serverRoutes", () => {
     });
 
     it("should return 204 if not connected", async () => {
+      deps.serverOptionsRepository.findById.resolves({ ...serverWithId, connections: [] });
       deps.mcpManager.getServer.returns({ options: { ...serverWithId, connections: [] } });
       const res = await http(app).post("/api/servers/s1/_disconnect/c1");
       expect(res.status).to.equal(204);

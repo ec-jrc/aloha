@@ -94,7 +94,6 @@ export default function MCPClientDeleteDialog({
         <DialogTrigger asChild disabled={disabled}>
           <Button
             variant="destructive"
-            className="mr-2"
             data-testid="client-delete-button-witness"
           >
             <TrashIcon /> Delete Client

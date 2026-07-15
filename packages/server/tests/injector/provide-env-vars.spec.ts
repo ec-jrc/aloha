@@ -70,13 +70,14 @@ describe("provideEnvVars", () => {
     expect(injector.resolve("isProduction")).to.be.false;
   });
 
-  it("should default sessionSecret to 'default_session_secret'", () => {
+  it("should throw when SESSION_SECRET is not defined", () => {
     process.env.SERVER_SECRET = "s";
     process.env.CLIENT_SECRET = "c";
     delete process.env.SESSION_SECRET;
 
-    const injector = provideEnvVars(createInjector());
-    expect(injector.resolve("sessionSecret")).to.equal("default_session_secret");
+    expect(() => provideEnvVars(createInjector())).to.throw(
+      "SESSION_SECRET is not defined in the environment variables"
+    );
   });
 
   it("should default sessionMaxAge to 24 hours", () => {

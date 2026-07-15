@@ -1,0 +1,2 @@
+var e=Object.defineProperty,t=(t,s,a)=>((t,s,a)=>s in t?e(t,s,{enumerable:!0,configurable:!0,writable:!0,value:a}):t[s]=a)(t,"symbol"!=typeof s?s+"":s,a);class s{constructor(){t(this,"type","sample"),t(this,"version","1.0.0"),t(this,"name","fe-be-sample")}async init(e){if("sample"!==this.type)throw new Error("The plugin should have type === 'sample'")}}export{s as default};
+//# sourceMappingURL=server-plugin.js.map

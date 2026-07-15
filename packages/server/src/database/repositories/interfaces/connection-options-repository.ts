@@ -16,7 +16,9 @@ governing permissions and limitations under the Licence.
 import { schemas } from "aloha-shared";
 import { VisibilityRepositoryInterface } from "./visibility-repository-interface";
 
-export interface ConnectionOptionsRepository
-  extends VisibilityRepositoryInterface<schemas.MCPConnectionOptions> {
+export interface ConnectionOptionsRepository extends VisibilityRepositoryInterface<schemas.MCPConnectionOptions> {
   unsetCreator(id: string): Promise<boolean>;
+  findByVersionGroupingUUID(
+    versionGroupingUUID: string
+  ): Promise<schemas.MCPConnectionOptionsWithId[]>;
 }

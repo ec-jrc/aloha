@@ -1,3 +1,11 @@
 packages:
   - "packages/*"
   - "plugins/*"
+allowBuilds:
+  '@tailwindcss/oxide': true
+  core-js: true
+  esbuild: true
+  gc-stats: true
+  mongodb-memory-server: true
+  nx: true
+  puppeteer: true

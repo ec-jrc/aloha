@@ -1,0 +1,1 @@
+ALTER TABLE clients ADD COLUMN "extras" JSONB NULL;

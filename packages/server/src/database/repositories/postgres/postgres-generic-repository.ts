@@ -34,82 +34,6 @@ export class PostgreSQLGenericRepository<T extends { [k: string]: unknown }>
     protected injector: Injector<DatabaseProvider>
   ) {}
 
-  protected getPool(): Pool {
-    return this.injector.resolve("getPool")();
-  }
-
-  protected async getClient(): Promise<PoolClient> {
-    return this.getPool().connect();
-  }
-
-  protected transformOnRead(
-    e: T & schemas.WithIdBase
-  ): T & schemas.WithIdBase {
-    return e;
-  }
-
-  protected transformOnWrite(e: Partial<T>): Partial<T> {
-    return { ...e };
-  }
-
-  /**
-   * Builds a SELECT with correlated ARRAY subqueries for each junction.
-   * ARRAY(SELECT ...) returns '{}' (empty array) when no rows match.
-   */
-  private buildSelectQuery(whereClause: string): string {
-    const jKeys = Object.keys(this.junctions);
-
-    const subqueries = jKeys.map((key) => {
-      const { table, entityCol, relatedCol } = this.junctions[key].config;
-      return `ARRAY(SELECT j."${relatedCol}"::text FROM ${table} j WHERE j."${entityCol}" = t.id) AS "${key}"`;
-    });
-
-    const select =
-      jKeys.length > 0
-        ? `SELECT t.*, ${subqueries.join(", ")}`
-        : `SELECT t.*`;
-
-    return `${select} FROM ${this.tableName} t WHERE ${whereClause}`;
-  }
-
-  private buildWhereClause(item: Partial<T>): {
-    clause: string;
-    values: unknown[];
-  } {
-    const entries = Object.entries(item).filter(
-      ([k]) => !(k in this.junctions) && k !== "id"
-    );
-
-    if (entries.length === 0) {
-      return { clause: "TRUE", values: [] };
-    }
-
-    const values: unknown[] = [];
-    const conditions = entries.map(([key, value]) => {
-      if (value === null || value === undefined) {
-        return `t."${key}" IS NULL`;
-      }
-      values.push(value);
-      return `t."${key}" = $${values.length}`;
-    });
-
-    return { clause: conditions.join(" AND "), values };
-  }
-
-  protected mapRowToEntity(
-    row: Record<string, unknown>
-  ): T & schemas.WithIdBase {
-    const result = Object.fromEntries(
-      Object.entries(row).map(([k, v]) => {
-        if (v === null) return [k, undefined];
-        if (Array.isArray(v) && v.length === 0 && k in this.junctions)
-          return [k, undefined];
-        return [k, v];
-      })
-    ) as T & schemas.WithIdBase;
-    return this.transformOnRead(result);
-  }
-
   async findByPattern(item: Partial<T>): Promise<(T & schemas.WithIdBase)[]> {
     const { clause, values } = this.buildWhereClause(item);
     const query = this.buildSelectQuery(clause);
@@ -142,9 +66,7 @@ export class PostgreSQLGenericRepository<T extends { [k: string]: unknown }>
 
     const transformed = this.transformOnWrite(mainItem as Partial<T>);
     const keys = Object.keys(transformed);
-    const values = keys.map(
-      (k) => (transformed as Record<string, unknown>)[k]
-    );
+    const values = keys.map((k) => (transformed as Record<string, unknown>)[k]);
     const columns = keys.map((k) => `"${k}"`).join(", ");
     const placeholders = keys.map((_, i) => `$${i + 1}`).join(", ");
 
@@ -152,20 +74,22 @@ export class PostgreSQLGenericRepository<T extends { [k: string]: unknown }>
     const client = await this.getClient();
     try {
       const result = await client.query(query, values);
-      const entityId = (result.rows[0] as Record<string, unknown>)
-        .id as string;
+      const entityId = (result.rows[0] as Record<string, unknown>).id as string;
 
       for (const [key, ids] of Object.entries(junctionData)) {
         if (ids.length > 0) {
           await this.junctions[key].replaceAll(entityId, ids);
         }
       }
-
       return {
-        ...(result.rows[0] as Record<string, unknown>),
-        ...junctionData,
+        ...item,
         id: entityId,
-      } as unknown as T & schemas.WithIdBase;
+      };
+      // return {
+      //   ...(result.rows[0] as Record<string, unknown>),
+      //   ...junctionData,
+      //   id: entityId,
+      // } as unknown as T & schemas.WithIdBase;
     } finally {
       client.release();
     }
@@ -180,9 +104,7 @@ export class PostgreSQLGenericRepository<T extends { [k: string]: unknown }>
     let mainUpdated = true;
 
     if (keys.length > 0) {
-      const setClause = keys
-        .map((k, i) => `"${k}" = $${i + 1}`)
-        .join(", ");
+      const setClause = keys.map((k, i) => `"${k}" = $${i + 1}`).join(", ");
       const values = keys.map(
         (k) => (transformed as Record<string, unknown>)[k]
       );
@@ -220,6 +142,78 @@ export class PostgreSQLGenericRepository<T extends { [k: string]: unknown }>
     } finally {
       client.release();
     }
+  }
+
+  protected getPool(): Pool {
+    return this.injector.resolve("getPool")();
+  }
+
+  protected async getClient(): Promise<PoolClient> {
+    return this.getPool().connect();
+  }
+
+  protected transformOnRead(e: T & schemas.WithIdBase): T & schemas.WithIdBase {
+    return e;
+  }
+
+  protected transformOnWrite(e: Partial<T>): Partial<T> {
+    return { ...e };
+  }
+
+  protected mapRowToEntity(
+    row: Record<string, unknown>
+  ): T & schemas.WithIdBase {
+    const result = Object.fromEntries(
+      Object.entries(row).map(([k, v]) => {
+        if (v === null) return [k, undefined];
+        if (Array.isArray(v) && v.length === 0 && k in this.junctions)
+          return [k, undefined];
+        return [k, v];
+      })
+    ) as T & schemas.WithIdBase;
+    return this.transformOnRead(result);
+  }
+
+  /**
+   * Builds a SELECT with correlated ARRAY subqueries for each junction.
+   * ARRAY(SELECT ...) returns '{}' (empty array) when no rows match.
+   */
+  private buildSelectQuery(whereClause: string): string {
+    const jKeys = Object.keys(this.junctions);
+
+    const subqueries = jKeys.map((key) => {
+      const { table, entityCol, relatedCol } = this.junctions[key].config;
+      return `ARRAY(SELECT j."${relatedCol}"::text FROM ${table} j WHERE j."${entityCol}" = t.id) AS "${key}"`;
+    });
+
+    const select =
+      jKeys.length > 0 ? `SELECT t.*, ${subqueries.join(", ")}` : `SELECT t.*`;
+
+    return `${select} FROM ${this.tableName} t WHERE ${whereClause}`;
+  }
+
+  private buildWhereClause(item: Partial<T>): {
+    clause: string;
+    values: unknown[];
+  } {
+    const entries = Object.entries(item).filter(
+      ([k]) => !(k in this.junctions) && k !== "id"
+    );
+
+    if (entries.length === 0) {
+      return { clause: "TRUE", values: [] };
+    }
+
+    const values: unknown[] = [];
+    const conditions = entries.map(([key, value]) => {
+      if (value === null || value === undefined) {
+        return `t."${key}" IS NULL`;
+      }
+      values.push(value);
+      return `t."${key}" = $${values.length}`;
+    });
+
+    return { clause: conditions.join(" AND "), values };
   }
 
   /** Separates junction-managed fields from main table columns */

@@ -1,0 +1,2 @@
+ALTER TABLE clients ADD COLUMN "versionNumber" NUMERIC NULL;
+ALTER TABLE clients ADD COLUMN "versionGroupingUUID" UUID NULL;

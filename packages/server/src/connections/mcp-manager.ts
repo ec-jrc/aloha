@@ -15,6 +15,7 @@ governing permissions and limitations under the Licence.
 
 import { schemas } from "aloha-shared";
 import { ConnectionOptionsRepository } from "../database/repositories/interfaces/connection-options-repository";
+import { AgentRepository } from "../database/repositories/interfaces/agent-repository-interface";
 import { injector } from "../injector/injector";
 import { getLogger } from "../injector/provide-logger";
 import { TokenSetProvider } from "../middleware/oidc/oidc-support";
@@ -28,18 +29,23 @@ const logger = getLogger("MCP-MANAGER");
 const MAX_AUTOCLOSE_CLIENT_TTL = 15 * 60 * 1000;
 
 class MCPManager {
-  public static inject = ["connectionOptionsRepository"] as const;
+  public static inject = [
+    "connectionOptionsRepository",
+    "agentRepository",
+  ] as const;
   private connections: Map<string, MCPClient | A2AClient> = new Map();
   private servers: Map<string, MCPServer | A2AServer> = new Map();
   private serversByPath: Map<string, MCPServer | A2AServer> = new Map();
   private startDate: Date | null = null;
   private pingHandle: ReturnType<typeof setInterval> | null = null;
+  private previousConnectedState: Map<string, boolean> = new Map();
   private autoCloseClients: {
     [id: string]: { client: MCPClient; timestamp: number; instanceId: string };
   } = {};
 
   public constructor(
-    private connectionOptionsRepository: ConnectionOptionsRepository
+    private connectionOptionsRepository: ConnectionOptionsRepository,
+    private agentRepository: AgentRepository
   ) {
     setInterval(() => {
       void this.closeAutoCloseClients();
@@ -110,11 +116,37 @@ class MCPManager {
     }
 
     this.connections.delete(id);
+    this.previousConnectedState.delete(id);
   }
 
   async startPingService() {
     const log = logger();
     log.info("Start ping services");
+
+    // Seed previousConnectedState from DB timestamps
+    for (const connection of this.connections.values()) {
+      const repo =
+        connection instanceof A2AClient
+          ? this.agentRepository
+          : this.connectionOptionsRepository;
+      try {
+        const record = await repo.findById(connection.id);
+        if (record) {
+          const lastOnline = record.lastOnlineAt?.getTime() ?? 0;
+          const lastOffline = record.lastOfflineAt?.getTime() ?? 0;
+          if (lastOnline || lastOffline) {
+            this.previousConnectedState.set(
+              connection.id,
+              lastOnline > lastOffline
+            );
+          }
+        }
+      } catch (e) {
+        logger()
+          .child({ connectionId: connection.id })
+          .debug(e, "Could not seed uptime state from DB");
+      }
+    }
 
     const pingFunction = async () => {
       if (this.connections.size === 0) return;
@@ -134,14 +166,31 @@ class MCPManager {
         })
       );
 
-      // for (const connection of this.connections.values()) {
-      //   try {
-      //     await connection.pingClient();
-      //     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      //   } catch (e) {
-      //     // logger().error(e);
-      //   }
-      // }
+      // Detect state transitions and persist timestamps
+      for (const connection of this.connections.values()) {
+        const id = connection.id;
+        const wasConnected = this.previousConnectedState.get(id);
+        const isNowConnected = connection.isConnected;
+
+        if (wasConnected !== isNowConnected) {
+          const repo =
+            connection instanceof A2AClient
+              ? this.agentRepository
+              : this.connectionOptionsRepository;
+          const update = isNowConnected
+            ? { lastOnlineAt: new Date() }
+            : { lastOfflineAt: new Date() };
+          try {
+            await repo.updateById(id, update);
+          } catch (e) {
+            logger()
+              .child({ connectionId: id })
+              .error(e, "Failed to persist uptime timestamp");
+          }
+          this.previousConnectedState.set(id, isNowConnected);
+        }
+      }
+
       const connectedServers = Array.from(this.connections.values()).reduce(
         (p, c) => p + (c.isConnected ? 1 : 0),
         0
@@ -219,6 +268,7 @@ class MCPManager {
       }
 
       let server: MCPServer | A2AServer;
+
       let basePathToServe: string;
 
       if (isA2AAgent(serverOptions)) {
@@ -226,9 +276,15 @@ class MCPManager {
         basePathToServe = `/api/a2a/${serverOptions.serverPath}`;
         log.debug({ basePathToServe }, "Serving A2A requests");
       } else {
-        server = new MCPServer(serverOptions);
+        server = new MCPServer(serverOptions, "STANDARD");
         basePathToServe = `/api/mcp/${serverOptions.serverPath}/messages`;
         log.debug({ basePathToServe }, "Serving messages");
+
+        log.debug("Serving hub");
+        const serverHub = new MCPServer(serverOptions, "HUB");
+        serverHub.serve(basePathToServe + "_hub");
+        this.servers.set(serverOptionsId + "@hub", serverHub);
+        this.serversByPath.set(serverOptions.serverPath + "_hub", serverHub);
       }
 
       server.serve(basePathToServe);

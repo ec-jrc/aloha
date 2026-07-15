@@ -1,0 +1,42 @@
+{
+  "compilerOptions": {
+    "rootDir": "../..",
+    "rootDirs": [
+      "./src/",
+      "../../packages/server/src/plugins/",
+      "../../packages/client/src/plugins/"
+    ],
+    "outDir": "./lib",
+    "moduleResolution": "bundler",
+    "module": "Preserve",
+    "jsx": "react-jsx",
+    "paths": {
+      "@aloha-ui-plugins/*": [
+        "../../packages/client/src/plugins/*"
+      ],
+      "@aloha-ui-components/*": [
+        "../../packages/client/src/components/*"
+      ],
+      "@aloha-ui-lib/*": [
+        "../../packages/client/src/lib/*"
+      ],
+      "@/lib/*": [
+        "../../packages/client/src/lib/*"
+      ],
+      "@aloha-repositories/*": [
+        "../../packages/server/src/database/repositories/interfaces/*"
+      ],
+      "@aloha-injector/*": [
+        "../../packages/server/src/injector/*"
+      ],
+      "@aloha-plugins/*": [
+        "../../packages/server/src/plugins/*"
+      ]
+    }
+  },
+  "include": [
+    "./src/**/*.ts",
+    "./src/**/*.tsx",
+    "./webpack.config.ts"
+  ]
+}

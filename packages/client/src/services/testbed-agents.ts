@@ -54,6 +54,10 @@ export type GenericConnection = {
   isConnected: boolean;
   id: string;
   type: "client" | "agent" | "testbedAgent";
+  versioningInfo?: {
+    versionNumber: number;
+    versionGroupingUUID: string;
+  };
 };
 
 export async function getModelsForEndpoint(
@@ -454,6 +458,7 @@ export async function getConnectionListAsGenericConnection() {
           name: e.name,
           id: e.id,
           isConnected: e.isConnected || false,
+          versioningInfo: e.versioningInfo,
         }) as GenericConnection
     );
 }

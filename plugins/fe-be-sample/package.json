@@ -1,0 +1,44 @@
+{
+  "name": "fe-be-sample",
+  "version": "1.0.0",
+  "description": "A sample plugin with browser and node exports",
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "exports": {
+    "./browser": {
+      "browser": "./lib/browser-plugin.js",
+      "import": "./lib/browser-plugin.js"
+    },
+    "./server": {
+      "import": "./lib/server-plugin.js",
+      "default": "./lib/server-plugin.js"
+    }
+  },
+  "main": "./lib/server-plugin.js",
+  "files": [
+    "lib"
+  ],
+  "scripts": {
+    "build": "rm -rf ./lib/* && NODE_OPTIONS='--import tsx' webpack --config webpack.config.ts",
+    "dev": "NODE_OPTIONS='--import tsx' webpack --config webpack.config.ts --watch"
+  },
+  "dependencies": {
+    "aloha-shared": "link:../../packages/aloha-shared",
+    "react": "^19.0.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.3.0",
+    "@types/react": "^19.2.14",
+    "css-loader": "^7.1.2",
+    "esbuild-loader": "4.4.3",
+    "postcss-loader": "^8.1.1",
+    "style-loader": "^4.0.0",
+    "tailwindcss": "^4.3.0",
+    "ts-loader": "^9.5.2",
+    "tsx": "^4.21.0",
+    "typescript": "^6.0.3",
+    "webpack": "^5.100.1",
+    "webpack-cli": "^6.0.1"
+  }
+}

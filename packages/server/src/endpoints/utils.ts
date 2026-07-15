@@ -21,6 +21,7 @@ import { VisibilityRepositoryInterface } from "../database/repositories/interfac
 import { injector } from "../injector/injector";
 import { authorise } from "../middleware/authorise";
 import { findCachedUsersById } from "../utils/cache.utils";
+import { hasMessageField } from "../utils/type-utils";
 
 const fetchCache = () => injector().resolve("fetchCache");
 const userProjectsCache = () => injector().resolve("userProjectsCache");
@@ -144,6 +145,7 @@ export const validateRequestBody =
 // const agentRepository = () => injector.resolve("agentRepository");
 // const agentsCache = () => injector.resolve("agentsCache");
 
+// eslint-disable-next-line complexity
 export const verifyPermission = async (
   obj: schemas.VisibilityInterface,
   req: Request,
@@ -167,7 +169,8 @@ export const verifyPermission = async (
   }
 
   // Creators always have permissions on their objects
-  if (obj.creator == user.id) return true;
+  if (obj.creator == user.id || user.id.startsWith(obj.creator + "."))
+    return true;
 
   // Public objects can be executed by anyone provided they are logged in
   if (obj.visibility == schemas.Visibility.Public && permission == "execute")
@@ -462,26 +465,26 @@ export function permissionsManagerGenerator<
       logger
     ),
     async (req, res) => {
-      // // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-      // const creator = req.body?.creator as string;
-      // const user = authentication_strategy.getUserFromSession(req);
-      // const isAdministrator = user.permissions.includes(
-      //   authentication_strategy.Permissions.Administration
-      // );
-
-      // if (!isAdministrator && user.id != creator) {
-      //   logger().error(`Attempted to set the creator without permission`);
-      //   res
-      //     .status(401)
-      //     .json({ error: `You are not allowed to user this functionality` });
-      //   return;
-      // }
-
       const dbObject = await repository().findById(req.params.id);
       if (!dbObject) {
         res.status(404).send(`${name} not found`);
         return;
       }
+
+      try {
+        await verifyPermission(dbObject, req, "write", true);
+      } catch (error) {
+        logger().error(error);
+        if (error instanceof HTTPError) {
+          res.status(error.errorCode).json({ error: error.message });
+        } else {
+          res.status(500).json({
+            error: `Failed to check the user permissions of the ${name}`,
+          });
+        }
+        return;
+      }
+
       const update = await repository().updateById(
         req.params.id,
         req.body as Partial<T>
@@ -536,9 +539,11 @@ export function permissionsManagerGenerator<
         res.status(204).end();
       } catch (error) {
         logger().error(error);
-        res
-          .status(500)
-          .json({ error: `Failed to set the visibility of the ${name}` });
+        let msg = `Failed to set the visibility of the ${name}}`;
+        if (hasMessageField(error)) {
+          msg = msg + ": " + error.message;
+        }
+        res.status(500).json({ error: msg });
       }
     }
   );

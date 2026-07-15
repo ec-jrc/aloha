@@ -14,17 +14,30 @@ governing permissions and limitations under the Licence.
 */
 
 import { cn } from "@/lib/utils";
+import { formatDistanceToNow } from "date-fns";
 
 export default function PageTitle({
   children,
   className,
   isConnected,
   isDisabled,
+  lastOnlineAt,
+  lastOfflineAt,
   ...others
 }: React.ComponentProps<"h1"> & {
   isConnected?: boolean;
   isDisabled?: boolean;
+  lastOnlineAt?: Date | string;
+  lastOfflineAt?: Date | string;
 }) {
+  const uptimeLabel = (() => {
+    if (isDisabled) return undefined;
+    if (isConnected && lastOnlineAt)
+      return `since ${formatDistanceToNow(new Date(lastOnlineAt))}`;
+    if (!isConnected && lastOfflineAt)
+      return `since ${formatDistanceToNow(new Date(lastOfflineAt))}`;
+    return undefined;
+  })();
   if (isConnected !== undefined || isDisabled !== undefined) {
     return (
       <h1 className={cn("text-xl mb-4 font-bold", className)} {...others}>
@@ -48,6 +61,7 @@ export default function PageTitle({
             }`}
           ></div>
           <span
+            data-testid="online-witness"
             className={`text-sm font-medium ${
               isDisabled
                 ? "text-gray-700"
@@ -56,11 +70,12 @@ export default function PageTitle({
                   : "text-red-700"
             }`}
           >
-            {isDisabled
-              ? "disabled"
-              : isConnected
-                ? "connected"
-                : "disconnected"}
+            {isDisabled ? "disabled" : isConnected ? "online" : "offline"}
+            {uptimeLabel && (
+              <span className="text-xs font-normal opacity-75 ml-1">
+                {uptimeLabel}
+              </span>
+            )}
           </span>
         </div>
       </h1>

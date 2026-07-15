@@ -95,11 +95,15 @@ export async function usersRoutes() {
         if (existingUser === null) {
           throw new HTTPError(404, "User not found");
         }
-        return (
-          (await checkUserName(existingUser.userId, existingUser.id)) &&
-          (await userRepository().updateById(id, user)) &&
-          usersCache().del(id)
-        );
+
+        if (!(await checkUserName(existingUser.userId, existingUser.id))) {
+          return false;
+        }
+        if (!(await userRepository().updateById(id, user))) {
+          return false;
+        }
+        usersCache().del(id);
+        return true;
       },
       delete: async (req) => {
         assertFieldInObject(req.params, "id", z.string());

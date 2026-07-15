@@ -17,6 +17,7 @@ import express from "express";
 import { getLogger } from "../injector/provide-logger";
 import { injector } from "../injector/injector";
 import { createProxyMiddleware } from "http-proxy-middleware";
+import { authorise } from "../middleware/authorise";
 
 const agentRepository = () => injector().resolve("testbedAgentRepository");
 const logger = getLogger("TESTBED-AGENT");
@@ -36,11 +37,11 @@ export function testbedAgentProxyRoutes() {
     if (!agent) {
       throw new Error("Testbed Agent not found");
     }
-    return agent.client;
+    return agent;
   };
   const resolveTarget = async (req: express.Request) => {
     const agent = await findAgent(req);
-    return agent.baseURL;
+    return agent.client.baseURL;
   };
   //
   const proxyMiddleware = createProxyMiddleware({
@@ -54,17 +55,21 @@ export function testbedAgentProxyRoutes() {
     router: resolveTarget,
   });
 
-  router.get("/:id/models", async (req, res) => {
+  router.get("/:id/models", authorise([]), async (req, res) => {
     const agent = await findAgent(req);
-    console.log(agent.baseURL + "/models");
-    const url = agent.baseURL.endsWith("/")
-      ? agent.baseURL + "models"
-      : agent.baseURL + "/models";
+    if (agent.creator !== req.session.user!.id) {
+      res.status(405).end();
+      return;
+    }
+    // console.log(agent.baseURL + "/models");
+    const url = agent.client.baseURL.endsWith("/")
+      ? agent.client.baseURL + "models"
+      : agent.client.baseURL + "/models";
     const response = await fetch(url, {
       method: "GET",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${agent.apiKey}`,
+        Authorization: `Bearer ${agent.client.apiKey}`,
       },
     });
     const data = (await response.json()) as unknown;

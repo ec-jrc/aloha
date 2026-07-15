@@ -2,6 +2,7 @@
   "extends": "../../tsconfig.json",
   "compilerOptions": {
     "outDir": "./dist",
+    "rootDir": ".",
     "rootDirs": ["./src", "./tests"],
     "target": "ES2022",
     "module": "ES2022",
@@ -12,7 +13,8 @@
     "transpileOnly": true,
     "compilerOptions": {
       "module": "CommonJS",
-      "moduleResolution": "node"
+      "moduleResolution": "node10",
+      "ignoreDeprecations": "6.0"
     }
   },
   "tsc-alias": {

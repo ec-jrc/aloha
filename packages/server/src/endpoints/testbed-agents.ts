@@ -89,6 +89,7 @@ export function testbedAgentRoutes() {
                     name: string;
                     isConnected: boolean;
                     type: string;
+                    versioningInfo?: schemas.MCPConnectionOptions["versioningInfo"];
                   };
 
                   const connection = mcpManager().getConnection(sc);
@@ -98,6 +99,8 @@ export function testbedAgentRoutes() {
                       name: connection.connectionOptions.name,
                       isConnected: connection.isConnected,
                       type: connection.connectionOptions.type,
+                      versioningInfo:
+                        connection.connectionOptions.versioningInfo,
                     };
                   } else {
                     const testbedAgentDetail =

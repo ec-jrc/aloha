@@ -815,3 +815,103 @@ describe("permissionsManagerGenerator", () => {
     });
   });
 });
+
+// ── _setCreator authorization ───────────────────────────────────────────────
+
+describe("permissionsManagerGenerator _setCreator authorization", () => {
+  let deps: MockDependencies;
+
+  function buildApp(user: authentication_strategy.UserPrincipal) {
+    const router = express.Router();
+    router.use(express.json());
+    permissionsManagerGenerator({
+      router,
+      name: "testEntity",
+      repository: () => deps.serverOptionsRepository as any,
+      logger: () =>
+        ({
+          info: sinon.stub(),
+          debug: sinon.stub(),
+          warn: sinon.stub(),
+          error: sinon.stub(),
+          child: sinon.stub().returnsThis(),
+        }) as any,
+      writePermissions: [],
+    });
+    return createTestApp(router, { user, basePath: "/entities" });
+  }
+
+  before(() => {
+    deps = createMockDependencies();
+    setupMockInjector(deps);
+    setupAuthPlugins();
+  });
+
+  after(() => {
+    restoreInjector();
+    teardownAuthPlugins();
+  });
+
+  beforeEach(() => {
+    deps.serverOptionsRepository.findById.resolves({
+      id: "1",
+      name: "s",
+      creator: "user-1",
+      visibility: schemas.Visibility.Private,
+    });
+    deps.serverOptionsRepository.updateById.resolves(true);
+    deps.userRepository.findById.resolves(adminDbUser);
+  });
+
+  it("should allow an administrator to change the creator", async () => {
+    const app = buildApp(adminUser);
+    const res = await http(app)
+      .post("/entities/1/_setCreator")
+      .send({ creator: "someone-else" });
+    expect(res.status).to.equal(204);
+  });
+
+  it("should allow the current creator to change the creator", async () => {
+    // entity creator is "user-1", adminUser.id is "user-1" — but test with
+    // a non-admin user whose id matches the entity creator
+    const creatorUser: authentication_strategy.UserPrincipal = {
+      id: "user-2",
+      userId: "creator-user",
+      displayName: "Creator",
+      permissions: [authentication_strategy.Permissions.UsersRead],
+      provider: "test",
+    };
+    const creatorDbUser = {
+      id: "user-2",
+      userId: "creator-user",
+      fullName: "Creator",
+      permissions: [authentication_strategy.Permissions.UsersRead],
+      disabled: false,
+    };
+    deps.serverOptionsRepository.findById.resolves({
+      id: "1",
+      name: "s",
+      creator: "user-2",
+      visibility: schemas.Visibility.Private,
+    });
+    deps.userRepository.findById.resolves(creatorDbUser);
+
+    const app = buildApp(creatorUser);
+    const res = await http(app)
+      .post("/entities/1/_setCreator")
+      .send({ creator: "new-owner" });
+    expect(res.status).to.equal(204);
+  });
+
+  it("should reject a non-admin, non-creator user from changing the creator", async () => {
+    deps.userRepository.findById.resolves(regularDbUser);
+
+    const app = buildApp(regularUser);
+    const res = await http(app)
+      .post("/entities/1/_setCreator")
+      .send({ creator: "someone-else" });
+    // Entity creator is "user-1", regularUser.id is "user-2", and regularUser is not admin
+    // Expected: 401 or 403 rejection
+    expect(res.status).to.be.oneOf([401, 403]);
+  });
+});

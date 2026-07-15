@@ -21,7 +21,7 @@ import { authorise } from "../middleware/authorise";
 import { getUserWithIdFromRepository } from "./utils";
 
 import MCPClient from "../connections/mcp-client";
-import MCPServer from "../connections/mcp-server";
+import MCPServer, { prefixNamedItems } from "../connections/mcp-server";
 import { createOptionalMCPOidcAuthMiddleware } from "../middleware/oidc/oidc-support";
 import { getServer } from "./servers-proxy-utils";
 
@@ -48,7 +48,7 @@ export function serverProxyRoutes() {
       const log = logger().child({ path });
       log.debug("Proxy SSE request");
 
-      const server = await getServer(req, res, MCPServer);
+      const server = await getServer(undefined, req, res, MCPServer);
       if (server !== undefined && server.router !== undefined) {
         try {
           await server.router.sseRequest(req, res, next);
@@ -79,103 +79,10 @@ export function serverProxyRoutes() {
       const log = logger().child({ path });
       log.debug("Proxy Messages request");
 
-      const server = await getServer(req, res, MCPServer);
+      const server = await getServer(undefined, req, res, MCPServer);
       if (server !== undefined && server.router !== undefined) {
         try {
           await server.router.messageRequest(req, res, next);
-        } catch (e) {
-          log.error(e);
-          res.writeHead(405).end(
-            JSON.stringify({
-              jsonrpc: "2.0",
-              error: {
-                code: -1099,
-                message: "Failed to connect to MCP server",
-              },
-              id: null,
-            })
-          );
-        }
-      }
-    }
-  );
-
-  // Streamable HTTP Routes
-  router.post(
-    "/:path/mcp",
-    optionalOIDCMiddleware,
-    authorise([authentication_strategy.Permissions.ProxyApiAccess]),
-    async (req, res, next) => {
-      const { path } = req.params;
-
-      const log = logger().child({ path });
-      log.debug("Proxy Messages request");
-
-      const server = await getServer(req, res, MCPServer);
-      if (server !== undefined && server.router !== undefined) {
-        try {
-          await server.router.httpPostRequest(req, res, next);
-        } catch (e) {
-          log.error(e);
-          res.writeHead(405).end(
-            JSON.stringify({
-              jsonrpc: "2.0",
-              error: {
-                code: -1099,
-                message: "Failed to connect to MCP server",
-              },
-              id: null,
-            })
-          );
-        }
-      }
-    }
-  );
-  router.get(
-    "/:path/mcp",
-
-    optionalOIDCMiddleware,
-    authorise([authentication_strategy.Permissions.ProxyApiAccess]),
-    async (req, res, next) => {
-      const { path } = req.params;
-
-      const log = logger().child({ path });
-      log.debug("Proxy Messages request");
-
-      const server = await getServer(req, res, MCPServer);
-      if (server !== undefined && server.router !== undefined) {
-        try {
-          await server.router.httpGetRequest(req, res, next);
-        } catch (e) {
-          log.error(e);
-          res.writeHead(405).end(
-            JSON.stringify({
-              jsonrpc: "2.0",
-              error: {
-                code: -1099,
-                message: "Failed to connect to MCP server",
-              },
-              id: null,
-            })
-          );
-        }
-      }
-    }
-  );
-  router.delete(
-    "/:path/mcp",
-    optionalOIDCMiddleware,
-    authorise([authentication_strategy.Permissions.ProxyApiAccess]),
-    async (req, res, next) => {
-      const { path } = req.params;
-
-      const log = logger().child({ path });
-      log.debug("Proxy Messages request");
-
-      const server = await getServer(req, res, MCPServer);
-      if (server !== undefined && server.router !== undefined) {
-        try {
-          await server.router.httpDeleteRequest(req, res, next);
         } catch (e) {
           log.error(e);
           res.writeHead(405).end(
@@ -204,7 +111,7 @@ export function serverProxyRoutes() {
       const log = logger().child({ path });
       log.debug("Proxy Info request");
 
-      const server = await getServer(req, res, MCPServer);
+      const server = await getServer(undefined, req, res, MCPServer);
       if (server !== undefined && server.router !== undefined) {
         try {
           res.json(
@@ -220,7 +127,10 @@ export function serverProxyRoutes() {
                 resources: c.resources,
                 resourceTemplates: c.resourceTemplates,
                 prompts: c.prompts,
-                tools: c.tools,
+                tools: prefixNamedItems(c.connectionOptions, c.tools),
+                versionNumber:
+                  c.connectionOptions.versioningInfo?.versionNumber,
+                extras: c.connectionOptions.extras,
               }))
           );
         } catch (e) {
@@ -231,6 +141,108 @@ export function serverProxyRoutes() {
               error: {
                 code: -1090,
                 message: "Failed to retrieve server information",
+              },
+              id: null,
+            })
+          );
+        }
+      }
+    }
+  );
+  // Streamable HTTP Routes
+  const internalServerPath = (params: { [k: string]: string }) => {
+    return (
+      params.serverPath +
+      (params.serverMode === "mcp"
+        ? ""
+        : params.serverMode === "hub"
+          ? "_hub"
+          : "_unknown_mode")
+    );
+  };
+
+  router.post(
+    "/:serverPath/:serverMode",
+    optionalOIDCMiddleware,
+    authorise([authentication_strategy.Permissions.ProxyApiAccess]),
+    async (req, res, next) => {
+      const path = internalServerPath(req.params);
+
+      const log = logger().child({ path });
+      log.debug("Proxy Messages request");
+
+      const server = await getServer(path, req, res, MCPServer);
+      if (server !== undefined && server.router !== undefined) {
+        try {
+          await server.router.httpPostRequest(req, res, next);
+        } catch (e) {
+          log.error(e);
+          res.writeHead(405).end(
+            JSON.stringify({
+              jsonrpc: "2.0",
+              error: {
+                code: -1099,
+                message: "Failed to connect to MCP server",
+              },
+              id: null,
+            })
+          );
+        }
+      }
+    }
+  );
+  router.get(
+    "/:serverPath/:serverMode",
+    optionalOIDCMiddleware,
+    authorise([authentication_strategy.Permissions.ProxyApiAccess]),
+    async (req, res, next) => {
+      const path = internalServerPath(req.params);
+
+      const log = logger().child({ path });
+      log.debug("Proxy Messages request");
+
+      const server = await getServer(path, req, res, MCPServer);
+      if (server !== undefined && server.router !== undefined) {
+        try {
+          await server.router.httpGetRequest(req, res, next);
+        } catch (e) {
+          log.error(e);
+          res.writeHead(405).end(
+            JSON.stringify({
+              jsonrpc: "2.0",
+              error: {
+                code: -1099,
+                message: "Failed to connect to MCP server",
+              },
+              id: null,
+            })
+          );
+        }
+      }
+    }
+  );
+  router.delete(
+    "/:serverPath/:serverMode",
+    optionalOIDCMiddleware,
+    authorise([authentication_strategy.Permissions.ProxyApiAccess]),
+    async (req, res, next) => {
+      const path = internalServerPath(req.params);
+
+      const log = logger().child({ path });
+      log.debug("Proxy Messages request");
+
+      const server = await getServer(path, req, res, MCPServer);
+      if (server !== undefined && server.router !== undefined) {
+        try {
+          await server.router.httpDeleteRequest(req, res, next);
+        } catch (e) {
+          log.error(e);
+          res.writeHead(405).end(
+            JSON.stringify({
+              jsonrpc: "2.0",
+              error: {
+                code: -1099,
+                message: "Failed to connect to MCP server",
               },
               id: null,
             })

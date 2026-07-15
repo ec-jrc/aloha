@@ -49,9 +49,10 @@ const makeFakeServer = (opts: { id: string; serverPath: string }) => ({
 describe("MCPManager", () => {
   let manager: MCPManager;
   const mockRepo = {} as any;
+  const mockAgentRepo = {} as any;
 
   beforeEach(() => {
-    manager = new MCPManager(mockRepo);
+    manager = new MCPManager(mockRepo, mockAgentRepo);
   });
 
   afterEach(() => {

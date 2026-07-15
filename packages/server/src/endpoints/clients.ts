@@ -98,6 +98,7 @@ export function clientsRoutes() {
                   : 0,
                 prompts: connection ? connection.prompts.length : 0,
                 tools: connection ? connection.tools.length : 0,
+                versioningInfo: connection?.connectionOptions.versioningInfo,
               };
             });
           return detailedServers;
@@ -488,6 +489,123 @@ export function clientsRoutes() {
           })
           .end();
       }
+    }
+  );
+
+  router.get(
+    "/:id/versions",
+    authorise([authentication_strategy.Permissions.ClientsRead]),
+
+    async (req: Request, res: Response) => {
+      const { id } = req.params;
+      const log = logger().child({ id });
+
+      log.debug("Create new client version");
+
+      if (!id) {
+        log.error("Must provide the id of the client to fetch versions from");
+        res.status(400).json({
+          error: "Must provide the id of the client to fetch versions from",
+        });
+        return;
+      }
+
+      const clientDefinition = await clientRepository().findById(id);
+      if (!clientDefinition) {
+        res.status(404).json({ error: "Client definition not found" }).end();
+        return;
+      }
+
+      const versioningInfo = clientDefinition.versioningInfo;
+      if (!versioningInfo) {
+        res.json([]).end();
+        return;
+      }
+
+      const allVersions = await clientRepository().findByVersionGroupingUUID(
+        versioningInfo.versionGroupingUUID
+      );
+
+      res.json(allVersions).end();
+    }
+  );
+
+  router.post(
+    "/:id/newVersion",
+    authorise([authentication_strategy.Permissions.ClientsWrite]),
+    async (req: Request, res: Response) => {
+      const { id } = req.params;
+      const log = logger().child({ id });
+
+      log.debug("Create new client version");
+
+      if (!id) {
+        log.error("Must provide the id of the client to version");
+        res
+          .status(400)
+          .json({ error: "Must provide the id of the client to version" });
+        return;
+      }
+
+      const clientDefinition = await clientRepository().findById(id);
+      if (!clientDefinition) {
+        res.status(404).json({ error: "Client definition not found" }).end();
+        return;
+      }
+
+      let versioningInfo = clientDefinition.versioningInfo;
+
+      let maxVersion: number;
+
+      if (!versioningInfo) {
+        log.debug("Versioning for the first time");
+
+        versioningInfo = {
+          versionGroupingUUID: crypto.randomUUID(),
+          versionNumber: 1,
+        };
+
+        clientDefinition.versioningInfo = versioningInfo;
+
+        maxVersion = 1;
+
+        await clientRepository().updateById(
+          clientDefinition.id,
+          clientDefinition
+        );
+      } else {
+        const allVersions = await clientRepository().findByVersionGroupingUUID(
+          versioningInfo.versionGroupingUUID
+        );
+        maxVersion = Math.max(
+          ...allVersions.map((e) => e.versioningInfo!.versionNumber)
+        );
+      }
+
+      const newClientVersion = {
+        ...clientDefinition,
+        id: undefined,
+        lastOnlineAt: undefined,
+        lastOfflineAt: undefined,
+        versioningInfo: {
+          versionNumber: maxVersion + 1,
+          versionGroupingUUID:
+            clientDefinition.versioningInfo!.versionGroupingUUID,
+        },
+      };
+
+      const newCreatedClient =
+        await clientRepository().create(newClientVersion);
+
+      fetchCache().clear();
+
+      await mcpManager().reloadConnection(clientDefinition);
+
+      const alohaTokenSet = injector().resolve("oidcAlohaTokenSetProvider");
+
+      mcpManager().createConnection(newCreatedClient, alohaTokenSet);
+
+      res.json({ id: newCreatedClient.id }).end();
     }
   );
 

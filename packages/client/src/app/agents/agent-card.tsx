@@ -14,6 +14,7 @@ governing permissions and limitations under the Licence.
 */
 
 import { endpoints_schemas } from "aloha-shared";
+import { formatDistanceToNow } from "date-fns";
 import {
   Card,
   CardContent,
@@ -80,6 +81,11 @@ export function AgentCard({ agent }: AgentCardProps) {
           <div className="text-sm text-red-600 flex items-center">
             <span className="w-2 h-2 bg-red-500 rounded-full mr-2 animate-pulse"></span>
             Server offline
+            {agent.lastOfflineAt && (
+              <span className="ml-1 opacity-75">
+                since {formatDistanceToNow(new Date(agent.lastOfflineAt))}
+              </span>
+            )}
           </div>
         )}
       </CardFooter>

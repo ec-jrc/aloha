@@ -14,9 +14,13 @@ governing permissions and limitations under the Licence.
 */
 
 import { CreatorAndVisibilityEditor } from "@/components/creator-and-visibility-editor";
-import PageTitle from "@/components/page-title";
 import Loading from "@/components/loading";
+import { OIDCRegistration } from "@/components/oidc-registration";
+import PageTitle from "@/components/page-title";
+import { ScrollableUrl } from "@/components/scrollable-url";
+import { TagsList } from "@/components/tags-list";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -24,14 +28,36 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { usePermissionChecker } from "@/hooks/use-permission-checker";
+import { usePlatformPluginsForSlotId } from "@/hooks/use-platform-plugins";
 import { useService } from "@/hooks/useService";
-import { isWithErrorsObject } from "@/services/utils";
-import { useMemo } from "react";
-import { useParams } from "react-router";
+import { UISlot } from "@/plugins/definitions/ui-slot";
+import { isWithErrorsObject, WithErrors } from "@/services/utils";
 import {
+  ChatBubbleOvalLeftEllipsisIcon,
+  ClipboardDocumentListIcon,
+  DocumentDuplicateIcon,
+  ExclamationTriangleIcon,
+  WrenchScrewdriverIcon,
+} from "@heroicons/react/16/solid";
+import { authentication_strategy, schemas } from "aloha-shared";
+import { FileStack } from "lucide-react";
+import { useCallback, useMemo } from "react";
+import { useNavigate, useParams } from "react-router";
+import { toast } from "sonner";
+import {
+  createNewClientVersion,
+  getAllConnectionVersions,
   getConnectionDetail,
   setConnectionCreator,
   setConnectionVisibility,
@@ -41,47 +67,148 @@ import MCPClientEditDialog from "./client-edit-dialog";
 import MCPClientPromptDetail from "./client-prompt-detail";
 import MCPClientResourceDetail from "./client-resource-detail";
 import MCPClientTool from "./client-tool";
-import { ScrollableUrl } from "@/components/scrollable-url";
-import {
-  ExclamationTriangleIcon,
-  ChatBubbleOvalLeftEllipsisIcon,
-  ClipboardDocumentListIcon,
-  DocumentDuplicateIcon,
-  WrenchScrewdriverIcon,
-} from "@heroicons/react/16/solid";
-import { schemas } from "aloha-shared";
-import { OIDCRegistration } from "@/components/oidc-registration";
-import { TagsList } from "@/components/tags-list";
 
 const PING_TIMEOUT = 3000;
 
+function NewVersionDialog({
+  client,
+}: {
+  client:
+    | schemas.MCPConnectionOptionsWithId
+    | WithErrors<schemas.MCPConnectionOptionsWithId>;
+}) {
+  const navigate = useNavigate();
+
+  const [loading, allVersions] = useService(
+    async (c) => {
+      if (c && !isWithErrorsObject(c)) {
+        return await getAllConnectionVersions(c.id);
+      } else {
+        return [] as schemas.MCPBaseConnectionWithId[];
+      }
+    },
+    [client],
+    []
+  );
+
+  const loadClientDetailPage = useCallback(
+    (id: string) => {
+      return navigate("/clients/" + id);
+    },
+    [navigate]
+  );
+
+  const createNewVersion = useCallback(async () => {
+    try {
+      if (!client || isWithErrorsObject(client)) {
+        return;
+      }
+      const clientId = client.id;
+      const { id } = await createNewClientVersion(clientId);
+      return navigate("/clients/" + id);
+    } catch (err: unknown) {
+      console.error("Unable to create new client version", err);
+      toast.error("Unable to create a new client version");
+    }
+  }, [client, navigate]);
+
+  if (!client || isWithErrorsObject(client)) {
+    return null;
+  }
+
+  if (loading) {
+    return (
+      <Button disabled={true}>
+        <FileStack /> Client Versions
+      </Button>
+    );
+  }
+
+  const hasVersions = allVersions.length > 1;
+
+  // if (allVersions.length > 1) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button>
+          <FileStack /> Client Versions
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent>
+        <DropdownMenuGroup>
+          <DropdownMenuItem onSelect={() => createNewVersion()}>
+            New Client Version
+          </DropdownMenuItem>
+        </DropdownMenuGroup>
+        {hasVersions && (
+          <DropdownMenuGroup>
+            <DropdownMenuSeparator />
+            {allVersions.map((v) => {
+              return (
+                <DropdownMenuItem onSelect={() => loadClientDetailPage(v.id)}>
+                  Switch to v{v.versioningInfo!.versionNumber}
+                </DropdownMenuItem>
+              );
+            })}
+          </DropdownMenuGroup>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+  // }
+
+  // return (
+  //   <ConfirmDialog
+  //     onClick={() => createNewVersion()}
+  //     message={`Do you want to create a new version of this client?`}
+  //     title="New client version"
+  //   >
+  //     <Button disabled={operating}>
+  //       <FileStack /> {operating ? "Please wait..." : "New Client Version"}
+  //     </Button>
+  //   </ConfirmDialog>
+  // );
+}
+
 export default function MCPClientDetailsPage() {
-  const params = useParams();
+  const { id } = useParams();
 
   const [loading, connection, , forceFetch] = useService(
     getConnectionDetail,
-    [params.id!],
+    [id],
     null,
     [],
     PING_TIMEOUT
   );
 
-  const permissionCheker = usePermissionChecker();
+  const permissionChecker = usePermissionChecker();
+
+  const clientWorkflowPlugins = usePlatformPluginsForSlotId(
+    "client-workflow-slot"
+  );
 
   const isAdministrator = useMemo(() => {
-    return permissionCheker.isAdministrator();
-  }, [permissionCheker]);
+    return permissionChecker.isAdministrator();
+  }, [permissionChecker]);
+
+  const canTheUserOperateOnWorkflow = useMemo(
+    () =>
+      permissionChecker.has(
+        authentication_strategy.Permissions.ManageWorkflows
+      ),
+    [permissionChecker]
+  );
 
   const isTheUserTheConnectionOwner = useMemo(() => {
-    return permissionCheker.hasOwnership(connection);
-  }, [connection, permissionCheker]);
+    return permissionChecker.hasOwnership(connection);
+  }, [connection, permissionChecker]);
 
   const isClientCallable = useMemo(() => {
     return (
       !isWithErrorsObject(connection) &&
-      permissionCheker.hasVisibility(connection)
+      permissionChecker.hasVisibility(connection)
     );
-  }, [connection, permissionCheker]);
+  }, [connection, permissionChecker]);
 
   const tabCounts = useMemo(
     () => ({
@@ -96,6 +223,15 @@ export default function MCPClientDetailsPage() {
   const hasTabsContent = useMemo(
     () => Object.values(tabCounts).some((count) => count > 0),
     [tabCounts]
+  );
+
+  const workflowSlotContext = useMemo(
+    () => ({
+      readonly: !canTheUserOperateOnWorkflow,
+      clientId: id,
+      afterSave: async () => forceFetch(),
+    }),
+    [id, forceFetch, canTheUserOperateOnWorkflow]
   );
 
   if (loading) {
@@ -116,7 +252,7 @@ export default function MCPClientDetailsPage() {
           <MCPClientDeleteDialog
             disabled={!isAdministrator}
             client={{
-              id: params.id,
+              id,
               isError: true,
               error: "Client error",
               name: "delete",
@@ -137,8 +273,16 @@ export default function MCPClientDetailsPage() {
               className="flex gap-6 items-center"
               isConnected={connection.isConnected}
               isDisabled={connection.disabled}
+              lastOnlineAt={connection.lastOnlineAt}
+              lastOfflineAt={connection.lastOfflineAt}
             >
               {connection.name}
+
+              {connection.versioningInfo && (
+                <span className="ml-2 text-muted-foreground">
+                  v{connection.versioningInfo.versionNumber}
+                </span>
+              )}
             </PageTitle>
             {connection.description && (
               <p className="text-gray-600 text-lg leading-relaxed max-w-3xl">
@@ -151,6 +295,9 @@ export default function MCPClientDetailsPage() {
               client={connection}
               disabled={!isTheUserTheConnectionOwner}
             />
+
+            <NewVersionDialog client={connection} />
+
             <MCPClientEditDialog
               client={connection}
               disabled={!isTheUserTheConnectionOwner}
@@ -205,7 +352,10 @@ export default function MCPClientDetailsPage() {
                 {connection.isStateful ? (
                   <div className="flex items-center">
                     The client is
-                    <span className="ml-2 inline-flex items-center px-3 py-1.5 rounded-full text-sm font-medium bg-sky-50 text-sky-700">
+                    <span
+                      data-testid="state-witness"
+                      className="ml-2 inline-flex items-center px-3 py-1.5 rounded-full text-sm font-medium bg-sky-50 text-sky-700"
+                    >
                       <span className="w-2 h-2 mr-1.5 rounded-full bg-sky-500" />
                       stateful
                     </span>
@@ -213,7 +363,10 @@ export default function MCPClientDetailsPage() {
                 ) : (
                   <div className="flex items-center">
                     The client is
-                    <span className="ml-2 inline-flex items-center px-3 py-1.5 rounded-full text-sm font-medium bg-emerald-100 text-emerald-600">
+                    <span
+                      data-testid="state-witness"
+                      className="ml-2 inline-flex items-center px-3 py-1.5 rounded-full text-sm font-medium bg-emerald-100 text-emerald-600"
+                    >
                       <span className="w-2 h-2 mr-1.5 rounded-full bg-emerald-400" />
                       stateless
                     </span>
@@ -240,6 +393,26 @@ export default function MCPClientDetailsPage() {
                 />
               )}
             </div>
+            {connection.id !== undefined &&
+              clientWorkflowPlugins.length > 0 && (
+                <div className="space-y-4 mt-6">
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-sm font-semibold text-gray-900 uppercase tracking-wide">
+                      Client Workflow
+                    </h3>
+                  </div>
+
+                  <div className="space-y-4">
+                    <UISlot
+                      context={workflowSlotContext}
+                      slotId="client-workflow-slot"
+                      renderWidget={(w) => {
+                        return <div key={w.id}>{w.content}</div>;
+                      }}
+                    ></UISlot>
+                  </div>
+                </div>
+              )}
           </div>
           {/* Content Area */}
           <div className="lg:w-2/3 mt-8 lg:mt-0">

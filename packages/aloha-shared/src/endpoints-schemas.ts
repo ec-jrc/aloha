@@ -28,6 +28,7 @@ import {
   AgentWithIdSchema,
   AgentSchema,
   TestbedAgentWithIdSchema,
+  VersioningInfoSchema,
 } from "./schemas.js";
 
 export const ResponseError = z.object({
@@ -87,7 +88,6 @@ export type MCPConnectionOptionsCreate = z.infer<
 
 export const MCPServerOptionsListSchema = z.array(MCPServerOptionsWithIdSchema);
 export type MCPServerOptionsList = z.infer<typeof MCPServerOptionsListSchema>;
-
 export const MCPServerOptionsDetailSchema = MCPServerOptionsWithIdSchema.and(
   z.object({
     connectionsDetail: z
@@ -97,6 +97,7 @@ export const MCPServerOptionsDetailSchema = MCPServerOptionsWithIdSchema.and(
           name: z.string().optional(),
           isConnected: z.boolean().optional(),
           type: z.string(),
+          versioningInfo: VersioningInfoSchema.optional(),
         })
       )
       .optional(),
@@ -133,6 +134,7 @@ export const AgentDetailSchema = AgentWithIdSchema.and(
           name: z.string().optional(),
           isConnected: z.boolean().optional(),
           type: z.string(),
+          versioningInfo: VersioningInfoSchema.optional(),
         })
       )
       .optional(),
@@ -186,6 +188,7 @@ export const TestbedAgentWithIdAndDetailSchema = TestbedAgentWithIdSchema.and(
         name: z.string(),
         isConnected: z.boolean(),
         type: z.enum(["agent", "client", "testbedAgent"]),
+        versioningInfo: VersioningInfoSchema.optional(),
       })
     ),
   })

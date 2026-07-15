@@ -29,6 +29,7 @@ import {
   WrenchScrewdriverIcon,
 } from "@heroicons/react/16/solid";
 import { endpoints_schemas } from "aloha-shared";
+import { formatDistanceToNow } from "date-fns";
 import { useCallback, useState } from "react";
 import { useNavigate } from "react-router";
 import { getConnectionList } from "../../services/clients";
@@ -109,8 +110,13 @@ export default function MCPClientsListPage() {
             >
               <CardHeader className="pb-4">
                 <CardTitle className="flex justify-between items-center truncate gap-3">
-                  <span className="text-lg font-semibold text-gray-900 truncate min-w-0 flex-1">
+                  <span className="text-lg font-semibold text-gray-900 truncate min-w-0 flex-1 ">
                     {c.name}
+                    {c.versioningInfo && (
+                      <span className="ml-2 text-muted-foreground">
+                        v{c.versioningInfo.versionNumber}
+                      </span>
+                    )}
                   </span>
                   <CardHeaderConnectionIndicator value={c} />
                 </CardTitle>
@@ -158,6 +164,11 @@ export default function MCPClientsListPage() {
                   <div className="text-sm text-red-600 flex items-center">
                     <span className="w-2 h-2 bg-red-500 rounded-full mr-2 animate-pulse"></span>
                     Client offline
+                    {c.lastOfflineAt && (
+                      <span className="ml-1 opacity-75">
+                        since {formatDistanceToNow(new Date(c.lastOfflineAt))}
+                      </span>
+                    )}
                   </div>
                 )}
               </CardFooter>

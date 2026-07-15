@@ -14,7 +14,7 @@ governing permissions and limitations under the Licence.
 */
 
 import { getUserInfo } from "@/services/users";
-import { isEqual } from "@react-hookz/deep-equal";
+import { isEqual } from "@ver0/deep-equal";
 import { authentication_strategy } from "aloha-shared";
 import React, { useCallback, useEffect, useState } from "react";
 import {

@@ -14,13 +14,13 @@ governing permissions and limitations under the Licence.
 */
 
 import { schemas } from "aloha-shared";
+import cloneDeep from "clone-deep";
 import { ObjectId } from "mongodb";
 import { Injector, INJECTOR_TOKEN } from "typed-inject";
 import { decrypt, encrypt } from "../../../utils/crypto";
 import { ConnectionOptionsRepository } from "../interfaces/connection-options-repository";
 import { DatabaseProvider } from "./mongo-db-generic-repository";
 import { MongoDBVisibilityRepository } from "./mongo-db-visibility-repository";
-import cloneDeep from "clone-deep";
 
 export class MongoDBConnectionOptionsRepository
   extends MongoDBVisibilityRepository<schemas.MCPConnectionOptions>
@@ -32,6 +32,30 @@ export class MongoDBConnectionOptionsRepository
     injector: Injector<DatabaseProvider>
   ) {
     super("clients", injector);
+  }
+
+  public async unsetCreator(id: string): Promise<boolean> {
+    const result = await this.getCollection().updateOne(
+      { _id: new ObjectId(id) },
+      { $unset: { creator: true } }
+    );
+
+    return result.modifiedCount > 0;
+  }
+
+  public async findByVersionGroupingUUID(
+    versionGroupingUUID: string
+  ): Promise<schemas.MCPConnectionOptionsWithId[]> {
+    const items = await this.getCollection()
+      .find({
+        "versioningInfo.versionGroupingUUID": versionGroupingUUID,
+      })
+      .sort("versioningInfo.versionNumber")
+      .toArray();
+
+    return items
+      .map((e) => this.mapIdField(e))
+      .map((e) => this.transformOnRead(e));
   }
 
   protected transform<T extends { authentication?: schemas.Authentication }>(
@@ -89,13 +113,5 @@ export class MongoDBConnectionOptionsRepository
     e: Partial<schemas.MCPConnectionOptions>
   ): Partial<schemas.MCPConnectionOptions> {
     return this.transform(cloneDeep(e), encrypt);
-  }
-  public async unsetCreator(id: string): Promise<boolean> {
-    const result = await this.getCollection().updateOne(
-      { _id: new ObjectId(id) },
-      { $unset: { creator: true } }
-    );
-
-    return result.modifiedCount > 0;
   }
 }

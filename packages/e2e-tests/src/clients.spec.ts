@@ -135,6 +135,39 @@ describe("[C] Client", () => {
     await page.close();
   });
 
+  it("should show stateful indicator", async () => {
+    const page = await newHomePageTab(env);
+    await activateClientListPage(page);
+    const firstItem = await waitForFirstClientListed(page);
+    if (!firstItem) {
+      expect.fail("Expected a client to exist");
+    }
+    await safeClickHandle(firstItem);
+    await sleep(3000);
+    const stateText = await page.$eval(
+      "span[data-testid='state-witness']",
+      (el) => el.textContent
+    );
+    expect(stateText).to.include("stateful");
+    await page.close();
+  });
+
+  it("should show the online indicator", async () => {
+    const page = await newHomePageTab(env);
+    await activateClientListPage(page);
+    const firstItem = await waitForFirstClientListed(page);
+    if (!firstItem) {
+      expect.fail("Expected a client to exist");
+    }
+    await safeClickHandle(firstItem);
+    await sleep(3000);
+    const stateText = await page.$eval(
+      "span[data-testid='online-witness']",
+      (el) => el.textContent
+    );
+    expect(stateText).to.include("onlinesince");
+    await page.close();
+  });
   it("should run the echo tool and verify response contains the message", async () => {
     const page = await newHomePageTab(env);
     await activateClientListPage(page);

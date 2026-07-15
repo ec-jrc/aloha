@@ -20,6 +20,7 @@ import { mcpServerStartup } from "./connections/mcp-server-setup";
 import { EventSource } from "eventsource";
 import { createFetch } from "node-fetch-native/proxy";
 import { getLogger } from "./injector/provide-logger";
+import { initPlatformPlugins } from "./plugins/plugins-setup";
 
 class EventSourceCustom extends EventSource {
   get readyState(): 0 | 1 | 2 {
@@ -44,6 +45,7 @@ global.EventSource = EventSourceCustom;
 
 global.fetch = createFetch();
 
+await initPlatformPlugins();
 // Setup the MCP servers
 await mcpServerStartup();
 

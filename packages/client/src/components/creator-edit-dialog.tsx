@@ -24,7 +24,7 @@ import {
 } from "@/components/ui/dialog";
 import { usePermissionChecker } from "@/hooks/use-permission-checker";
 import { exceptionToMessage } from "@/utils/type-utils";
-import { PencilIcon } from "@heroicons/react/16/solid";
+import { Pencil } from "lucide-react";
 import { schemas } from "aloha-shared";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -85,7 +85,7 @@ export function CreatorEditDialog({
       >
         {trigger ?? (
           <Button>
-            <PencilIcon /> Edit Owner
+            <Pencil /> Edit Owner
           </Button>
         )}
       </DialogTrigger>

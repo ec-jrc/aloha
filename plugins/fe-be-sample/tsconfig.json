@@ -1,0 +1,23 @@
+{
+  "compilerOptions": {
+    "rootDir": "../..",
+    "rootDirs": [
+      "./src/",
+      "../../packages/server/src/plugins/"
+    ],
+    "outDir": "./lib",
+    "moduleResolution": "bundler",
+    "module": "Preserve",
+    "jsx": "react-jsx",
+    "paths": {
+      "@aloha-plugins/*": [
+        "../../packages/server/src/plugins/*"
+      ]
+    }
+  },
+  "include": [
+    "./src/**/*.ts",
+    "./src/**/*.tsx",
+    "./webpack.config.ts"
+  ]
+}

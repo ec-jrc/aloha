@@ -23,11 +23,11 @@ import { useService } from "@/hooks/useService";
 import { exceptionToMessage } from "@/utils/type-utils";
 import {
   MinusCircleIcon,
-  PencilIcon,
   PlusCircleIcon,
   TrashIcon,
   ExclamationTriangleIcon,
 } from "@heroicons/react/16/solid";
+import { Pencil } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router";
 import { toast } from "sonner";
@@ -49,6 +49,29 @@ import { TagsList } from "@/components/tags-list";
 
 const PING_TIMEOUT = 5000;
 
+const EditDialog = ({
+  disabled,
+  id,
+  refreshServer,
+}: {
+  disabled: boolean;
+  id: string;
+  refreshServer: () => void;
+}) => {
+  return (
+    <MCPServerEditDialog
+      serverId={id}
+      trigger={
+        <Button disabled={disabled}>
+          <Pencil /> Edit Server
+        </Button>
+      }
+      onAccept={async () => {
+        refreshServer();
+      }}
+    ></MCPServerEditDialog>
+  );
+};
 export default function MCPServerDetailPage() {
   const { id } = useParams<{ id: string }>();
   const [isServerLoading, serverDetail, , refreshServer] = useService(
@@ -140,26 +163,21 @@ export default function MCPServerDetailPage() {
   }
 
   const serverConnections = serverDetail.connectionsDetail || [];
-  const associatedConnections = serverConnections.map((conn) => conn.name);
+  const associatedConnections = serverConnections.map((conn) => ({
+    id: conn.id,
+    versioningInfo: conn.versioningInfo,
+  }));
   const unassociatedConnections = allConnections.filter(
-    (conn) => !associatedConnections.includes(conn.name)
+    (conn) =>
+      associatedConnections.find(
+        (e) =>
+          e.id === conn.id ||
+          (e.versioningInfo &&
+            conn.versioningInfo &&
+            e.versioningInfo.versionGroupingUUID ===
+              conn.versioningInfo.versionGroupingUUID)
+      ) === undefined
   );
-
-  const EditDialog = ({ disabled }: { disabled: boolean }) => {
-    return (
-      <MCPServerEditDialog
-        serverId={id}
-        trigger={
-          <Button disabled={disabled}>
-            <PencilIcon /> Edit Server
-          </Button>
-        }
-        onAccept={async () => {
-          refreshServer();
-        }}
-      ></MCPServerEditDialog>
-    );
-  };
 
   async function doDeleteServer() {
     try {
@@ -195,7 +213,11 @@ export default function MCPServerDetailPage() {
                 Delete Server
               </Button>
             </ConfirmDialog>
-            <EditDialog disabled={!isTheUserTheOwner}></EditDialog>
+            <EditDialog
+              disabled={!isTheUserTheOwner}
+              id={id}
+              refreshServer={refreshServer}
+            ></EditDialog>
           </div>
         </div>
 
@@ -229,13 +251,24 @@ export default function MCPServerDetailPage() {
             <TagsList item={serverDetail} inline={false} />
             <div className="space-y-2 py-4">
               <dt className="text-sm font-semibold uppercase tracking-wide">
-                Server Path
+                Server Urls
               </dt>
 
               <ScrollableUrl
                 url={`${window.location.origin}/api/mcp/${serverDetail.serverPath}/mcp`}
                 className="max-w-full"
               />
+              <dd className="text-sm text-muted-foreground">
+                Use this URL to directly access to all resources available on
+                the server
+              </dd>
+              <ScrollableUrl
+                url={`${window.location.origin}/api/mcp/${serverDetail.serverPath}/hub`}
+                className="max-w-full mt-4"
+              />
+              <dd className="text-sm text-muted-foreground">
+                Use this URL to access to discover and invoke tools utilities
+              </dd>
             </div>
 
             <div className="space-y-2 py-4">
@@ -389,6 +422,11 @@ export default function MCPServerDetailPage() {
 
                       <span className="flex-1 font-medium text-gray-900 truncate">
                         {connection.name || "Unknown connection"}
+                        {connection.versioningInfo && (
+                          <span className="text-muted-foreground italic ml-2">
+                            v{connection.versioningInfo.versionNumber}
+                          </span>
+                        )}
                       </span>
 
                       {isTheUserTheOwner && (
@@ -491,6 +529,11 @@ export default function MCPServerDetailPage() {
 
                       <span className="flex-1 font-medium text-gray-900 truncate">
                         {connection.name || "Unknown connection"}
+                        {connection.versioningInfo && (
+                          <span className="text-muted-foreground italic ml-2">
+                            v{connection.versioningInfo.versionNumber}
+                          </span>
+                        )}
                       </span>
 
                       {isTheUserTheOwner && (

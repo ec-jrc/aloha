@@ -31,6 +31,12 @@ describe("provideOIDC", () => {
 
   it("should provide OIDC configuration with defaults", () => {
     delete process.env.OIDC_UNKNOWN_USERS_PERMISSIONS;
+    delete process.env.OIDC_ENABLED;
+    delete process.env.OIDC_USE_IDENTITY_PROPAGATION_SERVICE;
+    delete process.env.OIDC_UNKNOWN_USERS_ALLOW;
+    delete process.env.OIDC_SCOPE;
+    delete process.env.OIDC_UNKNOWN_USERS_PERMISSIONS;
+    delete process.env.OIDC_IDENTITY_PROPAGATION_REGISTRAR_PATH;
 
     const baseInjector = createInjector().provideValue("isProduction", false);
     const injector = provideOIDC(baseInjector);
@@ -41,7 +47,8 @@ describe("provideOIDC", () => {
     expect(injector.resolve("oidcUnknownUsersAllow")).to.be.false;
     expect(injector.resolve("oidcUnknownUsersPermissions")).to.deep.equal([]);
     expect(injector.resolve("oidcIdentityPropagationService")).to.be.undefined;
-    expect(injector.resolve("oidcIdentityPropagationRegistrar")).to.be.undefined;
+    expect(injector.resolve("oidcIdentityPropagationRegistrar")).to.be
+      .undefined;
     expect(injector.resolve("oidcAlohaTokenSetProvider")).to.be.undefined;
   });
 
@@ -57,7 +64,9 @@ describe("provideOIDC", () => {
     expect(injector.resolve("oidcEnabled")).to.be.true;
     expect(injector.resolve("oidcIssuerUrl")).to.equal("https://example.com");
     expect(injector.resolve("oidcClientId")).to.equal("my-client");
-    expect(injector.resolve("oidcCodeRedirectUri")).to.equal("https://example.com/callback");
+    expect(injector.resolve("oidcCodeRedirectUri")).to.equal(
+      "https://example.com/callback"
+    );
   });
 
   it("should use production home in production mode", () => {
@@ -102,7 +111,10 @@ describe("provideOIDC", () => {
     const injector = provideOIDC(baseInjector);
 
     expect(injector.resolve("oidcUnknownUsersAllow")).to.be.true;
-    expect(injector.resolve("oidcUnknownUsersPermissions")).to.deep.equal(["CLIENTS_READ", "SERVERS_READ"]);
+    expect(injector.resolve("oidcUnknownUsersPermissions")).to.deep.equal([
+      "CLIENTS_READ",
+      "SERVERS_READ",
+    ]);
   });
 
   it("should set custom OIDC scope", () => {
@@ -121,8 +133,12 @@ describe("provideOIDC", () => {
     const injector = provideOIDC(baseInjector);
 
     expect(injector.resolve("oidcUseIdentityPropagationService")).to.be.true;
-    expect(injector.resolve("oidcIdentityPropagationRegistrar")).to.be.a("promise");
-    expect(injector.resolve("oidcIdentityPropagationService")).to.be.a("promise");
+    expect(injector.resolve("oidcIdentityPropagationRegistrar")).to.be.a(
+      "promise"
+    );
+    expect(injector.resolve("oidcIdentityPropagationService")).to.be.a(
+      "promise"
+    );
     expect(injector.resolve("oidcAlohaTokenSetProvider")).to.be.a("function");
   });
 });

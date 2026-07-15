@@ -108,11 +108,12 @@ export function serverRoutes() {
                   name: connection?.connectionOptions.name,
                   isConnected: connection?.isConnected,
                   type: connection?.connectionOptions.type,
+                  versioningInfo: connection?.connectionOptions.versioningInfo,
                 };
               })
               .filter((sc) => sc !== null),
           } as endpoints_schemas.MCPServerOptionsDetail;
-          return result as schemas.MCPServerOptions;
+          return result;
         },
       },
       create: async (req) => {

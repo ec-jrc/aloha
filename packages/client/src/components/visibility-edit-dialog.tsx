@@ -43,7 +43,7 @@ import { usePermissionChecker } from "@/hooks/use-permission-checker";
 import { getProjectsList } from "@/services/projects";
 import { VisibilityServiceFunc } from "@/services/utils";
 import { exceptionToMessage } from "@/utils/type-utils";
-import { PencilIcon } from "@heroicons/react/16/solid";
+import { Pencil } from "lucide-react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { schemas } from "aloha-shared";
 import { useEffect, useState } from "react";
@@ -90,8 +90,14 @@ export default function VisibilityEditDialog({
 
   const form = useForm({
     resolver: zodResolver(schemas.VisibilitySchema),
-    values: visibilityObject,
+    defaultValues: visibilityObject,
   });
+
+  useEffect(() => {
+    if (dialogOpen) {
+      form.reset();
+    }
+  }, [form, dialogOpen]);
 
   async function onSubmit(values: schemas.VisibilityInterface) {
     try {
@@ -131,7 +137,7 @@ export default function VisibilityEditDialog({
               )
             }
           >
-            <PencilIcon /> Edit Access
+            <Pencil /> Edit Access
           </Button>
         )}
       </DialogTrigger>
@@ -182,31 +188,6 @@ export default function VisibilityEditDialog({
               }}
             />
 
-            <FormField
-              control={form.control}
-              name="disabled"
-              render={({ field }) => {
-                return (
-                  <FormItem className="flex flex-row items-center justify-start rounded-lg border p-3 shadow-sm">
-                    <FormControl>
-                      <Switch
-                        checked={!field.value}
-                        onCheckedChange={(e) => field.onChange(!e)}
-                      ></Switch>
-                    </FormControl>
-                    <div className="space-y-0.5">
-                      <FormLabel>Enabled</FormLabel>
-                      <FormDescription>
-                        {field.value === true
-                          ? "This item is disabled and cannot be used"
-                          : "This item is enabled"}
-                      </FormDescription>
-                    </div>
-                    <FormMessage />
-                  </FormItem>
-                );
-              }}
-            />
             {visibility === schemas.Visibility.Managed && (
               <FormField
                 control={form.control}
@@ -235,6 +216,32 @@ export default function VisibilityEditDialog({
                 )}
               />
             )}
+
+            <FormField
+              control={form.control}
+              name="disabled"
+              render={({ field }) => {
+                return (
+                  <FormItem className="flex flex-row items-center justify-start rounded-lg border p-3 shadow-sm">
+                    <FormControl>
+                      <Switch
+                        checked={!field.value}
+                        onCheckedChange={(e) => field.onChange(!e)}
+                      ></Switch>
+                    </FormControl>
+                    <div className="space-y-0.5">
+                      <FormLabel>Enabled</FormLabel>
+                      <FormDescription>
+                        {field.value === true
+                          ? "This item is disabled and cannot be used"
+                          : "This item is enabled"}
+                      </FormDescription>
+                    </div>
+                    <FormMessage />
+                  </FormItem>
+                );
+              }}
+            />
 
             <DialogFooter className="justify-end">
               <Button

@@ -15,19 +15,34 @@ governing permissions and limitations under the Licence.
 
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import "./index.css";
-import App from "./app/app";
 import { BrowserRouter } from "react-router";
-import { Toaster } from "./components/ui/sonner";
+import App from "./app/app";
+import PlatformPluginsContextProvider from "./context/platform-plugins-context";
 import UserContextProvider from "./context/user-context-provider";
+import "./index.css";
+
+import * as React from "react";
+import * as ReactDOM from "react-dom";
+import * as ReactJsxRuntime from "react/jsx-runtime";
+import * as sonner from "sonner";
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+(globalThis as any).__aloha_shared = {
+  React,
+  ReactJsxRuntime,
+  ReactDOM,
+  sonner,
+};
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <BrowserRouter>
       <UserContextProvider>
-        <App />
+        <PlatformPluginsContextProvider>
+          <App />
+        </PlatformPluginsContextProvider>
       </UserContextProvider>
     </BrowserRouter>
-    <Toaster />
+    {/* <Toaster /> */}
   </StrictMode>
 );

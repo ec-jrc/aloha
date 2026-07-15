@@ -29,26 +29,30 @@ const agentRepository = () => injector().resolve("agentRepository");
 const agentCache = () => injector().resolve("agentsCache");
 
 export async function getServer(
+  path: string | undefined,
   req: express.Request,
   res: express.Response,
   type: typeof A2AServer,
   checkAuth?: boolean
 ): Promise<A2AServer | undefined>;
 export async function getServer(
+  path: string | undefined,
   req: express.Request,
   res: express.Response,
   type: typeof MCPServer,
   checkAuth?: boolean
 ): Promise<MCPServer | undefined>;
 export async function getServer(
+  path: string | undefined,
   req: express.Request,
   res: express.Response,
   type: typeof A2AServer | typeof MCPServer,
   checkAuth?: boolean
 ): Promise<A2AServer | MCPServer | undefined> {
-  assertFieldInObject(req, "path", z.string());
-
-  const { path } = req.params;
+  if (path === undefined) {
+    assertFieldInObject(req, "path", z.string());
+    path = req.params.path;
+  }
 
   const log = logger().child({ path });
   try {

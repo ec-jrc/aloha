@@ -35,7 +35,7 @@ export function serverProxyA2ARoutes() {
     optionalOIDCMiddleware,
     authorise([authentication_strategy.Permissions.ProxyApiAccess]),
     async (req, res, next) => {
-      const server = await getServer(req, res, A2AServer);
+      const server = await getServer(undefined, req, res, A2AServer);
       if (server) {
         server.router(req, res, next);
       } else {

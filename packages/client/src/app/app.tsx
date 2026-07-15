@@ -14,10 +14,10 @@ governing permissions and limitations under the Licence.
 */
 
 import { Toaster } from "@/components/ui/sonner";
+import { useEffect, useState } from "react";
 import Header from "../components/header";
 import Menu from "../components/menu";
 import Routing from "./routing";
-import { useEffect, useState } from "react";
 
 export default function App() {
   const [isMobile, setIsMobile] = useState(false);
@@ -47,7 +47,7 @@ export default function App() {
           <div className="h-16"></div>
         </div>
       </div>
-      <Toaster position="bottom-right" theme="light" />
+      <Toaster position="bottom-right" theme="light" richColors />
     </div>
   );
 }

@@ -14,21 +14,11 @@ governing permissions and limitations under the Licence.
 */
 
 import ConfirmDialog from "@/components/confirm-dialog";
-import PageTitle from "@/components/page-title";
-import { Separator } from "@/components/ui/separator";
-import { Button } from "@/components/ui/button";
-import { exceptionToMessage, isDefined } from "@/utils/type-utils";
-import {
-  MinusCircleIcon,
-  PencilIcon,
-  PlusCircleIcon,
-  TrashIcon,
-  ExclamationTriangleIcon,
-} from "@heroicons/react/16/solid";
-import { useCallback, useMemo, useState } from "react";
-import { useNavigate, useParams } from "react-router";
-import { toast } from "sonner";
 import ConnectionTypeIndicator from "@/components/connection-type-indicator";
+import Loading from "@/components/loading";
+import PageTitle from "@/components/page-title";
+import { Button } from "@/components/ui/button";
+import { Separator } from "@/components/ui/separator";
 import { usePermissionChecker } from "@/hooks/use-permission-checker";
 import { useService } from "@/hooks/useService";
 import {
@@ -38,9 +28,19 @@ import {
   getAllGenericConnections,
   getTestbedAgentDetail,
 } from "@/services/testbed-agents";
+import { exceptionToMessage } from "@/utils/type-utils";
+import {
+  ExclamationTriangleIcon,
+  MinusCircleIcon,
+  PlusCircleIcon,
+  TrashIcon,
+} from "@heroicons/react/16/solid";
+import { Pencil } from "lucide-react";
+import { useCallback, useMemo, useState } from "react";
+import { useNavigate, useParams } from "react-router";
+import { toast } from "sonner";
 import TestbedAgentEditDialog from "./testbed-agent-edit-dialog";
 import TestbedAgentRunDialog from "./testbed-agent-run-dialog";
-import Loading from "@/components/loading";
 
 export default function TestbedAgentDetailPage() {
   const [draggingOver, setDraggingOver] = useState(0);
@@ -117,7 +117,7 @@ export default function TestbedAgentDetailPage() {
           agentId={id}
           trigger={
             <Button disabled={disabled} className="mr-2">
-              <PencilIcon /> Edit Testbed Agent
+              <Pencil /> Edit Testbed Agent
             </Button>
           }
           onAccept={async () => {
@@ -160,10 +160,20 @@ export default function TestbedAgentDetailPage() {
   }
 
   const serverConnections = agentDetail.connectionsDetail || [];
-
-  const associatedConnections = serverConnections.map((conn) => conn.name);
+  const associatedConnections = serverConnections.map((conn) => ({
+    id: conn.id,
+    versioningInfo: conn.versioningInfo,
+  }));
   const unassociatedConnections = allConnections.filter(
-    (conn) => isDefined(conn.name) && !associatedConnections.includes(conn.name)
+    (conn) =>
+      associatedConnections.find(
+        (e) =>
+          e.id === conn.id ||
+          (e.versioningInfo &&
+            conn.versioningInfo &&
+            e.versioningInfo.versionGroupingUUID ===
+              conn.versioningInfo.versionGroupingUUID)
+      ) === undefined
   );
 
   return (
@@ -328,6 +338,12 @@ export default function TestbedAgentDetailPage() {
 
                       <span className="flex-1 font-medium text-gray-900 truncate">
                         {connection.name || "Unknown connection"}
+
+                        {connection.versioningInfo?.versionNumber && (
+                          <span className="text-muted-foreground italic ml-2">
+                            v{connection.versioningInfo?.versionNumber}
+                          </span>
+                        )}
                       </span>
 
                       {isTheUserTheOwner && (
@@ -430,6 +446,11 @@ export default function TestbedAgentDetailPage() {
 
                       <span className="flex-1 font-medium text-gray-900 truncate">
                         {connection.name || "Unknown connection"}
+                        {connection.versioningInfo?.versionNumber && (
+                          <span className="text-muted-foreground italic ml-2">
+                            v{connection.versioningInfo?.versionNumber}
+                          </span>
+                        )}
                       </span>
 
                       {isTheUserTheOwner && (

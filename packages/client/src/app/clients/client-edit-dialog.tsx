@@ -47,7 +47,8 @@ import { useService } from "@/hooks/useService";
 import { isWithErrorsObject, WithErrors } from "@/services/utils";
 import { generateRandomString } from "@/utils/string-utils";
 import { exceptionToMessage, hasMessageField } from "@/utils/type-utils";
-import { DocumentPlusIcon, PencilIcon } from "@heroicons/react/16/solid";
+import { DocumentPlusIcon } from "@heroicons/react/16/solid";
+import { Pencil } from "lucide-react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { endpoints_schemas, schemas } from "aloha-shared";
 import { useState } from "react";
@@ -296,7 +297,7 @@ export default function MCPClientEditDialog({
               className="mr-2"
               data-testid="edit-client-button-witness"
             >
-              <PencilIcon /> Edit Client
+              <Pencil /> Edit Client
             </Button>
           ) : (
             <Button

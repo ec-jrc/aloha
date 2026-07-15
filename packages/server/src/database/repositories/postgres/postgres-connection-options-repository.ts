@@ -53,9 +53,89 @@ export class PostgreSQLConnectionOptionsRepository
     }
   }
 
-  private transformAuth<
-    T extends { authentication?: schemas.Authentication },
-  >(e: T, fun: (v: string, key: string) => string): T {
+  async findByVersionGroupingUUID(
+    versionGroupingUUID: string
+  ): Promise<schemas.MCPConnectionOptionsWithId[]> {
+    const result = await this.findByPattern({
+      versionGroupingUUID,
+    } as Partial<schemas.MCPConnectionOptionsWithId>);
+
+    return result.sort((a, b) => {
+      if (a.versioningInfo && b.versioningInfo) {
+        return a.versioningInfo.versionNumber - b.versioningInfo.versionNumber;
+      }
+      return 0;
+    });
+  }
+
+  protected transformOnRead(
+    e: schemas.MCPConnectionOptions & schemas.WithIdBase
+  ): schemas.MCPConnectionOptions & schemas.WithIdBase {
+    const authTransformed = this.transformAuth(e, (v, key) => {
+      try {
+        return decrypt(v, key);
+      } catch {
+        return v;
+      }
+    });
+    return this.unFlatVersioningInfo(authTransformed);
+  }
+
+  protected transformOnWrite(
+    e: Partial<schemas.MCPConnectionOptions>
+  ): Partial<schemas.MCPConnectionOptions> {
+    const authTransformed = this.transformAuth(cloneDeep(e), encrypt);
+    return this.flatVersioningInfo(authTransformed);
+  }
+
+  private unFlatVersioningInfo(
+    e: schemas.MCPConnectionOptions &
+      schemas.WithIdBase & {
+        versionNumber?: number;
+        versionGroupingUUID?: string;
+      }
+  ): schemas.MCPConnectionOptions & schemas.WithIdBase {
+    if (e.versionGroupingUUID && e.versionNumber) {
+      const result = {
+        ...e,
+        versioningInfo: {
+          versionNumber: parseInt("" + e.versionNumber),
+          versionGroupingUUID: e.versionGroupingUUID,
+        },
+      };
+      delete result.versionGroupingUUID;
+      delete result.versionNumber;
+      return result;
+    }
+    return e;
+  }
+
+  private flatVersioningInfo(e: Partial<schemas.MCPConnectionOptions>): Partial<
+    Omit<schemas.MCPConnectionOptions, "versioningInfo"> & {
+      versionNumber?: number;
+      versionGroupingUUID?: string;
+    }
+  > {
+    if (!e.versioningInfo) {
+      return e;
+    }
+
+    const versioningInfo = e.versioningInfo;
+
+    const result = {
+      ...e,
+      versionNumber: versioningInfo.versionNumber,
+      versionGroupingUUID: versioningInfo.versionGroupingUUID,
+    };
+
+    delete result.versioningInfo;
+    return result;
+  }
+
+  private transformAuth<T extends { authentication?: schemas.Authentication }>(
+    e: T,
+    fun: (v: string, key: string) => string
+  ): T {
     if (e.authentication) {
       switch (e.authentication.type) {
         case "none":
@@ -89,23 +169,5 @@ export class PostgreSQLConnectionOptionsRepository
       }
     }
     return e;
-  }
-
-  protected transformOnRead(
-    e: schemas.MCPConnectionOptions & schemas.WithIdBase
-  ): schemas.MCPConnectionOptions & schemas.WithIdBase {
-    return this.transformAuth(e, (v, key) => {
-      try {
-        return decrypt(v, key);
-      } catch {
-        return v;
-      }
-    });
-  }
-
-  protected transformOnWrite(
-    e: Partial<schemas.MCPConnectionOptions>
-  ): Partial<schemas.MCPConnectionOptions> {
-    return this.transformAuth(cloneDeep(e), encrypt);
   }
 }

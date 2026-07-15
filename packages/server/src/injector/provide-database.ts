@@ -19,30 +19,32 @@ import { ConnectionOptionsRepository } from "../database/repositories/interfaces
 import { JWTTokenRepository } from "../database/repositories/interfaces/jwt-token-repository-interface.js";
 import { ProjectRepository } from "../database/repositories/interfaces/project-repository-interface.js";
 import { MCPServerOptionsRepository } from "../database/repositories/interfaces/server-options-repository-interface.js";
-import { UsersRepository } from "../database/repositories/interfaces/user-repository-interface.js";
 import { TestbedAgentRepository } from "../database/repositories/interfaces/testbed-agent-repository-interface.js";
+import { UsersRepository } from "../database/repositories/interfaces/user-repository-interface.js";
 
 // MongoDB imports
-import { DatabaseProvider as MongoDatabaseProvider } from "../database/repositories/mongodb/mongo-db-generic-repository.js";
 import { MongoDbAgentRepository } from "../database/repositories/mongodb/mongo-db-agent-repository.js";
 import { MongoDBConnectionOptionsRepository } from "../database/repositories/mongodb/mongo-db-connection-options-repository.js";
+import { DatabaseProvider as MongoDatabaseProvider } from "../database/repositories/mongodb/mongo-db-generic-repository.js";
 import { MongoDbJWTTokenRepository } from "../database/repositories/mongodb/mongo-db-jwt-token-repository.js";
 import { MongoDbProjectRepository } from "../database/repositories/mongodb/mongo-db-project-repository.js";
 import { MongoDBMCPServerOptionsRepository } from "../database/repositories/mongodb/mongo-db-server-options-repository.js";
-import { MongoDBUserRepository } from "../database/repositories/mongodb/mongo-db-user-repository.js";
 import { MongoDbTestbedAgentRepository } from "../database/repositories/mongodb/mongo-db-testbed-agent-repository.js";
+import { MongoDBUserRepository } from "../database/repositories/mongodb/mongo-db-user-repository.js";
 import { getDatabase } from "../database/repositories/mongodb/mongodb.js";
 
 // PostgreSQL imports
-import { DatabaseProvider as PgDatabaseProvider } from "../database/repositories/postgres/postgres-generic-repository.js";
+import { repositoryWriteDecorate } from "../database/repositories/interfaces/decorators/respository-write-decorators.js";
 import { PostgreSQLAgentRepository } from "../database/repositories/postgres/postgres-agent-repository.js";
 import { PostgreSQLConnectionOptionsRepository } from "../database/repositories/postgres/postgres-connection-options-repository.js";
+import { DatabaseProvider as PgDatabaseProvider } from "../database/repositories/postgres/postgres-generic-repository.js";
 import { PostgreSQLJWTTokenRepository } from "../database/repositories/postgres/postgres-jwt-token-repository.js";
 import { PostgreSQLProjectRepository } from "../database/repositories/postgres/postgres-project-repository.js";
 import { PostgreSQLMCPServerOptionsRepository } from "../database/repositories/postgres/postgres-server-options-repository.js";
-import { PostgreSQLUserRepository } from "../database/repositories/postgres/postgres-user-repository.js";
 import { PostgreSQLTestbedAgentRepository } from "../database/repositories/postgres/postgres-testbed-agent-repository.js";
+import { PostgreSQLUserRepository } from "../database/repositories/postgres/postgres-user-repository.js";
 import { getPool } from "../database/repositories/postgres/postgresql.js";
+import { logUpdateCall } from "../database/repositories/interfaces/decorators/server-decorator-functions.js";
 
 export function getDatabaseType() {
   const dbTypeMatch = process.env.DB_URI?.match("^(\\w+):");
@@ -222,14 +224,24 @@ function providePostgreSQLDatabase<T extends { serverSecret: string }>(
 
 export function provideDatabase<T extends { serverSecret: string }>(
   injector: Injector<T>
-) {
+): ReturnType<typeof provideMongoDBDatabase<T>> {
+  let injector2: ReturnType<typeof provideMongoDBDatabase<T>>;
+
   switch (getDatabaseType()) {
     case "postgresql":
-      return providePostgreSQLDatabase(injector) as ReturnType<
+      injector2 = providePostgreSQLDatabase(injector) as ReturnType<
         typeof provideMongoDBDatabase<T>
       >;
+      break;
     case "mongodb":
     default:
-      return provideMongoDBDatabase(injector);
+      injector2 = provideMongoDBDatabase(injector);
   }
+  // return injector2;
+  const newInjector: ReturnType<typeof provideMongoDBDatabase<T>> =
+    injector2.provideFactory(
+      "connectionOptionsRepository",
+      repositoryWriteDecorate("connectionOptionsRepository", [logUpdateCall])
+    );
+  return newInjector;
 }

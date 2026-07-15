@@ -34,8 +34,12 @@ export function provideEnvVars<T>(injector: Injector<T>) {
     );
   }
 
-  const SESSION_SECRET =
-    (process.env.SESSION_SECRET as string) || "default_session_secret";
+  const SESSION_SECRET = process.env.SESSION_SECRET;
+  if (!SESSION_SECRET) {
+    throw new Error(
+      "SESSION_SECRET is not defined in the environment variables"
+    );
+  }
 
   const SESSION_MAX_AGE = parseInt(
     process.env.SESSION_MAX_AGE || String(1000 * 60 * 60 * 24),
@@ -52,6 +56,14 @@ export function provideEnvVars<T>(injector: Injector<T>) {
       DEFAULT_JWT_AUTHENTICATION === "true"
     )
     .provideValue("pluginPath", process.env.AUTHENTICATION_PLUGIN)
+    .provideValue(
+      "platformPluginsNames",
+      (process.env.PLATFORM_PLUGINS || "")
+        .split(",")
+        .map((p) => p.trim())
+        .filter(Boolean)
+    )
+    .provideValue("platformPluginsPath", process.env.PLATFORM_PLUGINS_PATH)
     .provideValue("serverSecret", SERVER_SECRET)
     .provideValue("clientSecret", CLIENT_SECRET)
     .provideValue("sessionSecret", SESSION_SECRET)

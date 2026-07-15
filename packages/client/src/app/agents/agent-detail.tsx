@@ -51,12 +51,12 @@ import { MessageSendParams } from "@a2a-js/sdk";
 import {
   ExclamationTriangleIcon,
   MinusCircleIcon,
-  PencilIcon,
   PlusCircleIcon,
   TrashIcon,
 } from "@heroicons/react/16/solid";
 import { PaperAirplaneIcon, StopIcon } from "@heroicons/react/24/solid";
 import { schemas } from "aloha-shared";
+import { Pencil } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router";
 import { toast } from "sonner";
@@ -78,6 +78,30 @@ import AgentEditDialog from "./agent-edit-dialog";
 import AgentTokenDialog from "./agent-token-dialog";
 
 const PING_TIMEOUT = 5000;
+
+function EditDialog({
+  disabled,
+  id,
+  refreshAgent,
+}: {
+  disabled: boolean;
+  id: string;
+  refreshAgent: () => void;
+}) {
+  return (
+    <AgentEditDialog
+      agentId={id}
+      trigger={
+        <Button disabled={disabled}>
+          <Pencil /> Edit Agent
+        </Button>
+      }
+      onAccept={async () => {
+        refreshAgent();
+      }}
+    ></AgentEditDialog>
+  );
+}
 
 export default function AgentDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -118,6 +142,7 @@ export default function AgentDetailPage() {
 
   // Clear events when agent changes or component unmounts
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setEvents([]);
   }, [agentDetail?.id]);
 
@@ -278,26 +303,6 @@ export default function AgentDetailPage() {
     [isGenerating, input, handleSubmit]
   );
 
-  const EditDialog = useMemo(
-    () =>
-      ({ disabled }: { disabled: boolean }) => {
-        return (
-          <AgentEditDialog
-            agentId={id}
-            trigger={
-              <Button disabled={disabled}>
-                <PencilIcon /> Edit Agent
-              </Button>
-            }
-            onAccept={async () => {
-              refreshAgent();
-            }}
-          ></AgentEditDialog>
-        );
-      },
-    [id, refreshAgent]
-  );
-
   if (isAgentLoading) {
     return <div>Loading...</div>;
   }
@@ -307,9 +312,20 @@ export default function AgentDetailPage() {
   }
 
   const serverConnections = agentDetail.connectionsDetail || [];
-  const associatedConnections = serverConnections.map((conn) => conn.name);
+  const associatedConnections = serverConnections.map((conn) => ({
+    id: conn.id,
+    versioningInfo: conn.versioningInfo,
+  }));
   const unassociatedConnections = allConnections.filter(
-    (conn) => !associatedConnections.includes(conn.name)
+    (conn) =>
+      associatedConnections.find(
+        (e) =>
+          e.id === conn.id ||
+          (e.versioningInfo &&
+            conn.versioningInfo &&
+            e.versioningInfo.versionGroupingUUID ===
+              conn.versioningInfo.versionGroupingUUID)
+      ) === undefined
   );
 
   async function doDeleteAgent() {
@@ -332,6 +348,8 @@ export default function AgentDetailPage() {
               className="flex gap-6 items-center"
               isConnected={agentDetail.isConnected}
               isDisabled={agentDetail.disabled}
+              lastOnlineAt={agentDetail.lastOnlineAt}
+              lastOfflineAt={agentDetail.lastOfflineAt}
             >
               {agentDetail.name}
             </PageTitle>
@@ -352,7 +370,11 @@ export default function AgentDetailPage() {
                 Delete Agent
               </Button>
             </ConfirmDialog>
-            <EditDialog disabled={!isTheUserTheOwner}></EditDialog>
+            <EditDialog
+              disabled={!isTheUserTheOwner}
+              id={id}
+              refreshAgent={refreshAgent}
+            ></EditDialog>
           </div>
         </div>
         {"isError" in agentDetail && (
@@ -684,6 +706,11 @@ export default function AgentDetailPage() {
 
                       <span className="flex-1 font-medium text-gray-900 truncate">
                         {connection.name || "Unknown connection"}
+                        {connection.versioningInfo?.versionNumber && (
+                          <span className="text-muted-foreground italic ml-2">
+                            v{connection.versioningInfo?.versionNumber}
+                          </span>
+                        )}
                       </span>
 
                       {isTheUserTheOwner && (
@@ -786,6 +813,11 @@ export default function AgentDetailPage() {
 
                       <span className="flex-1 font-medium text-gray-900 truncate">
                         {connection.name || "Unknown connection"}
+                        {connection.versioningInfo?.versionNumber && (
+                          <span className="text-muted-foreground italic ml-2">
+                            v{connection.versioningInfo?.versionNumber}
+                          </span>
+                        )}
                       </span>
 
                       {isTheUserTheOwner && (
