@@ -52,13 +52,13 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { useService } from "@/hooks/useService";
+import { useService } from "@/hooks/use-service";
 import { isWithErrorsObject } from "@/services/utils";
 import { generateRandomString } from "@/utils/string-utils";
 import { exceptionToMessage } from "@/utils/type-utils";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useEffect, useState } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { toast } from "sonner";
 
 const AgentOptionsWithTagStringSchema =
@@ -121,7 +121,7 @@ export default function AgentEditDialog({
       }
     }
 
-    loadServerData();
+    void loadServerData();
   }, [serverId, dialogOpen]);
 
   const [loadingOIDCRegistration, registration] = useService(
@@ -166,7 +166,7 @@ export default function AgentEditDialog({
 
       setDialogOpen(false);
       if (onAccept) {
-        onAccept();
+        return onAccept();
       }
     } catch (e: unknown) {
       console.error(e);
@@ -174,7 +174,7 @@ export default function AgentEditDialog({
     }
   }
 
-  const authentication = form.watch("authentication");
+  const authentication = useWatch({ control: form.control, name: "authentication" });
 
   return (
     <Dialog open={dialogOpen} onOpenChange={(open) => setDialogOpen(open)}>

@@ -16,7 +16,7 @@ governing permissions and limitations under the Licence.
 import ConfirmDialog from "@/components/confirm-dialog";
 import PageTitle from "@/components/page-title";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import SearchBox from "@/components/search-box";
 import {
   Table,
   TableBody,
@@ -26,31 +26,117 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { useService } from "@/hooks/useService";
-import {
-  DocumentPlusIcon,
-  TrashIcon,
-} from "@heroicons/react/16/solid";
-import { Pencil } from "lucide-react";
+import { usePermissionChecker } from "@/hooks/use-permission-checker";
+import { useService } from "@/hooks/use-service";
+import { camelCaseToSpaces } from "@/utils/string-utils";
+import { isDefined } from "@/utils/type-utils";
+import { DocumentPlusIcon, TrashIcon } from "@heroicons/react/16/solid";
 import { authentication_strategy, schemas } from "aloha-shared";
+import { Pencil } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { getProjectsList } from "../../services/projects";
 import { deleteUser, getUsersList } from "../../services/users";
 import UserForm from "./user-form";
-import { usePermissionChecker } from "@/hooks/use-permission-checker";
-import { camelCaseToSpaces } from "@/utils/string-utils";
-import { isDefined } from "@/utils/type-utils";
-
-const ROWS_PER_PAGE = 25;
 
 const ALL_PERMISSION_ENTRIES = Object.entries(
   authentication_strategy.Permissions
 ).filter(([, value]) => typeof value === "string");
 
+const userPredicate = (u: schemas.UserWithId, search: string) => {
+  return search
+    .toLowerCase()
+    .split(" ")
+    .some(
+      (f) =>
+        u.fullName.toLowerCase().includes(f) ||
+        u.userId.toLowerCase().includes(f) ||
+        u.projects?.some((p) => p.toLowerCase().includes(f)) ||
+        u.permissions.some((p) => p.toLowerCase().includes(f))
+    );
+};
+
+function DeleteButton({
+  userId,
+  canManageUsers,
+  onDeleted,
+}: {
+  userId: string;
+  canManageUsers: boolean;
+  onDeleted: () => void;
+}) {
+  return (
+    <ConfirmDialog
+      onClick={async () => {
+        try {
+          await deleteUser(userId);
+          onDeleted();
+        } catch (error) {
+          console.error(error);
+          toast.error("There was an error while deleting the user");
+        }
+      }}
+    >
+      <Button
+        variant="destructive"
+        size="icon"
+        disabled={!canManageUsers}
+        data-testid="delete-user-button-witness"
+      >
+        <TrashIcon />
+      </Button>
+    </ConfirmDialog>
+  );
+}
+
+function EditButton({
+  userId,
+  canManageUsers,
+  onEdited,
+}: {
+  userId: string;
+  canManageUsers: boolean;
+  onEdited: () => Promise<void>;
+}) {
+  return (
+    <UserForm userId={userId} onAccept={onEdited}>
+      <Button
+        className="mr-2"
+        size="icon"
+        disabled={!canManageUsers}
+        data-testid="edit-user-button-witness"
+      >
+        <Pencil />
+      </Button>
+    </UserForm>
+  );
+}
+
+function NewButton({
+  canManageUsers,
+  onCreated,
+}: {
+  canManageUsers: boolean;
+  onCreated: () => Promise<void>;
+}) {
+  return (
+    <UserForm userId={undefined} onAccept={onCreated}>
+      <Button
+        variant="default"
+        disabled={!canManageUsers}
+        data-testid="new-user-button-witness"
+      >
+        <DocumentPlusIcon />
+        New User
+      </Button>
+    </UserForm>
+  );
+}
+
 export default function UsersListPage() {
-  const [filter, setFilter] = useState<string>("");
-  const [page, setPage] = useState<number>(1);
+  const [filteredUsers, setFilteredUsers] = useState<
+    schemas.UserWithId[] | null
+  >(null);
   const [requestRefresh, setRequestRefresh] = useState(1);
 
   const [isLoading, users] = useService(
@@ -80,98 +166,11 @@ export default function UsersListPage() {
     );
   }, [permissionChecker]);
 
-  const filterUsers = useCallback(
-    (u: schemas.User) => {
-      if (filter.length < 3) return true;
-      return filter
-        .toLowerCase()
-        .split(" ")
-        .map(
-          (f) =>
-            u.fullName.toLowerCase().includes(f) ||
-            u.userId.toLowerCase().includes(f) ||
-            u.projects?.some((p) => p.toLowerCase().includes(f)) ||
-            u.permissions.some((p) => p.toLowerCase().includes(f))
-        )
-        .some((f) => f);
-    },
-    [filter]
-  );
+  const refreshList = useCallback(() => {
+    setRequestRefresh((r) => r + 1);
+  }, []);
 
-  const DeleteButton = ({ userId }: { userId: string }) => {
-    return (
-      <ConfirmDialog
-        onClick={async () => {
-          try {
-            await deleteUser(userId);
-            setRequestRefresh(requestRefresh + 1);
-          } catch (error) {
-            console.error(error);
-            toast.error("There was an error while deleting the user");
-          }
-        }}
-      >
-        <Button
-          variant="destructive"
-          size="icon"
-          disabled={!canManageUsers}
-          data-testid="delete-user-button-witness"
-        >
-          <TrashIcon />
-        </Button>
-      </ConfirmDialog>
-    );
-  };
-
-  const EditButton = ({ userId }: { userId: string }) => {
-    return (
-      <UserForm
-        userId={userId}
-        onAccept={async () => setRequestRefresh(requestRefresh + 1)}
-      >
-        <Button
-          className="mr-2"
-          size="icon"
-          disabled={!canManageUsers}
-          data-testid="edit-user-button-witness"
-        >
-          <Pencil />
-        </Button>
-      </UserForm>
-    );
-  };
-
-  const NewButton = () => {
-    return (
-      <UserForm
-        userId={undefined}
-        onAccept={async () => setRequestRefresh(requestRefresh + 1)}
-      >
-        <Button
-          variant="default"
-          disabled={!canManageUsers}
-          data-testid="new-user-button-witness"
-        >
-          <DocumentPlusIcon />
-          New User
-        </Button>
-      </UserForm>
-    );
-  };
-
-  const handleChangePage = (
-    _event: React.MouseEvent<HTMLButtonElement>,
-    newPage: number
-  ) => {
-    setPage(newPage);
-  };
-
-  // const handleChangeRowsPerPage = (
-  //   event: React.ChangeEvent<HTMLInputElement>
-  // ) => {
-  //   setRowsPerPage(parseInt(event.target.value, 10));
-  //   setPage(1);
-  // };
+  const displayedUsers = filteredUsers ?? users;
 
   return (
     <div className="max-w-8xl mx-auto" data-testid="user-list-page-witness">
@@ -181,16 +180,18 @@ export default function UsersListPage() {
           <PageTitle className="text-2xl font-bold text-gray-900">
             Users
           </PageTitle>
-          <NewButton />
+          <NewButton
+            canManageUsers={canManageUsers}
+            onCreated={async () => refreshList()}
+          />
         </div>
 
         {/* Search and Filter */}
-        <Input
-          type="search"
-          className="w-full bg-white border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+        <SearchBox
+          items={users}
+          predicate={userPredicate}
+          onFilter={setFilteredUsers}
           placeholder="Search users by name, ID, projects, or permissions..."
-          value={filter}
-          onChange={(e) => setFilter(e.target.value)}
         />
       </div>
       <div className="flex flex-wrap gap-8">
@@ -213,10 +214,8 @@ export default function UsersListPage() {
                 </TableCell>
               </TableRow>
             )}
-            {users
-              .filter(filterUsers)
-              .slice((page - 1) * ROWS_PER_PAGE, page * ROWS_PER_PAGE)
-              .map((user) => (
+            {users.length > 0 &&
+              displayedUsers.map((user) => (
                 <TableRow key={user.userId}>
                   <TableCell data-testid="user-id-witness" className="w-1/12">
                     {user.userId}
@@ -240,31 +239,22 @@ export default function UsersListPage() {
                       .join(", ")}
                   </TableCell>
                   <TableCell className="text-center w-1/12">
-                    <EditButton userId={user.id}></EditButton>
-                    <DeleteButton userId={user.id}></DeleteButton>
+                    <EditButton
+                      userId={user.id}
+                      canManageUsers={canManageUsers}
+                      onEdited={async () => refreshList()}
+                    />
+                    <DeleteButton
+                      userId={user.id}
+                      canManageUsers={canManageUsers}
+                      onDeleted={refreshList}
+                    />
                   </TableCell>
                 </TableRow>
               ))}
           </TableBody>
         </Table>
       </div>
-      {users.filter(filterUsers).length > ROWS_PER_PAGE && (
-        <div className="flex justify-center mt-4">
-          <Button
-            onClick={(event) => handleChangePage(event, page - 1)}
-            className="mr-2"
-            disabled={page === 1}
-          >
-            Previous
-          </Button>
-          <Button
-            onClick={(event) => handleChangePage(event, page + 1)}
-            disabled={page * ROWS_PER_PAGE >= users.filter(filterUsers).length}
-          >
-            Next
-          </Button>
-        </div>
-      )}
     </div>
   );
 }

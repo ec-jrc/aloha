@@ -51,7 +51,7 @@ import {
 } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Switch } from "@/components/ui/switch";
-import { useService } from "@/hooks/useService";
+import { useService } from "@/hooks/use-service";
 import { camelCaseToSpaces } from "@/utils/string-utils";
 
 const ALL_PERMISSION_ENTRIES = Object.entries(

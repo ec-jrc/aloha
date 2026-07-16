@@ -1,5 +1,54 @@
 # CHANGELOG
 
+## [4.1.0] - 15 Jul 2026
+
+### Added
+
+- Global MCP hub that aggregates tools across all connected clients, served at `/api/mcp/hub`, with permissions enforced before any tool is executed and only the latest client version used
+- A2A connected-client registry exposed at `:serverPath/registry/v1` for both servers and MCP agents
+- A2A agent card display in the UI, and the ability for testbed agents to call A2A agents
+- Reusable search box across clients, agents, and testbed agents, with a clear (X) icon and debounced filtering
+- Agent workflow state persisted in the database
+- Maintenance scripts for the plugin `extras` field
+
+### Changed
+
+- Tokens and passwords are now redacted from logs
+- Clients are now sorted by name and version number
+- Authorization model for shared resources: only an admin or the owner may operate on or create new versions of a client or agent, and admins can change the ownership and access of any client or agent
+- Toggle to show or hide the connection section
+- OIDC connections use dedicated per-connection clients
+- Aloha performs a token exchange after dynamic client registration
+
+### Fixed
+
+- Fixed a crash triggered by federated users
+- Fixed the A2A discovery URL and received-message rendering issues
+
+## [4.0.0] - 17 Jun 2026
+
+### Added
+
+- Global MCP hub exposed alongside each server: tools are discoverable and invocable through `discover_tools` / `invoke_tool` meta-tools, with tool names prefixed by their server (`serverName.toolName`) and fuzzy relevance ranking (minisearch)
+- Client versioning: create and manage multiple versions of a client, with a version indicator in the client list and version details in the UI
+- Runtime plugin platform for both frontend and backend
+- New `client-workflow` feature plugin implementing client lifecycle states
+- Client and agent uptime tracking
+- `aloha-perf` load-testing tool
+
+### Changed
+
+- Major dependency upgrade
+- Tool lists are prefixed with the server name
+
+### Fixed
+
+- Fixed a user update bug and non-running tests
+- Restored server protocol and authentication type when editing
+- Avoid reallocating the edit dialog during re-render
+- Fixed wildcard (`*`) tool search and a ranking edge case
+- Security: fixed an issue in creator assignment, an information leak in testbed agents, and default session secret handling
+
 ## [3.0.2] - 04 Apr 2026
 
 ### Added

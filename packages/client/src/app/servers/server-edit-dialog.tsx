@@ -97,7 +97,7 @@ export default function MCPServerEditDialog({
       // }
     }
 
-    loadServerData();
+    void loadServerData();
   }, [serverId]);
 
   const form = useForm({
@@ -126,7 +126,7 @@ export default function MCPServerEditDialog({
 
       setDialogOpen(false);
       if (onAccept) {
-        onAccept();
+        return onAccept();
       }
     } catch (e: unknown) {
       console.error(e);

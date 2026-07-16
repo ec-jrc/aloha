@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/set-state-in-effect */
 /*
 Copyright (C) 2025 European Union
  
@@ -91,7 +92,7 @@ export default function TestbedAgentRunDialog({
       setEvents([]);
       setIsGenerating(false);
       setInput("");
-      getTestbedAgentDetail(agentId)
+      void getTestbedAgentDetail(agentId)
         .then((agentDetail) => {
           if (!isWithErrorsObject(agentDetail)) {
             setAgentDetail(agentDetail);
@@ -166,6 +167,7 @@ export default function TestbedAgentRunDialog({
           },
         });
         // Override the agent prompt and model
+        // eslint-disable-next-line react-hooks/immutability
         agentInstance.agent.instructions = systemPrompt;
         agentInstance.agent.model = model;
         await sendMessageToAgentInstance(agentInstance, message);
@@ -215,7 +217,7 @@ export default function TestbedAgentRunDialog({
   const onSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setIsGenerating(true);
-    handleSubmit(input);
+    void handleSubmit(input);
   };
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -223,7 +225,7 @@ export default function TestbedAgentRunDialog({
       e.preventDefault();
       if (isGenerating || !input) return;
       setIsGenerating(true);
-      handleSubmit(input);
+      void handleSubmit(input);
     }
   };
 

@@ -13,7 +13,11 @@ OF ANY KIND, either express or implied. See the Licence for the specific languag
 governing permissions and limitations under the Licence.
 */
 
-import { authentication_strategy, logger, schemas } from "aloha-shared";
+import {
+  authentication_strategy,
+  logger as sLogger,
+  schemas,
+} from "aloha-shared";
 import express, { NextFunction, Request, Response, Router } from "express";
 import { z } from "zod";
 import { CrudRepository } from "../database/repositories/interfaces/repository-interfaces";
@@ -21,8 +25,10 @@ import { VisibilityRepositoryInterface } from "../database/repositories/interfac
 import { injector } from "../injector/injector";
 import { authorise } from "../middleware/authorise";
 import { findCachedUsersById } from "../utils/cache.utils";
-import { hasMessageField } from "../utils/type-utils";
+import { hasMessageField, unknownToString } from "../utils/type-utils";
+import { getLogger } from "../injector/provide-logger";
 
+const logger = getLogger("ENDPOINT_UTILS");
 const fetchCache = () => injector().resolve("fetchCache");
 const userProjectsCache = () => injector().resolve("userProjectsCache");
 const userRepository = () => injector().resolve("userRepository");
@@ -59,7 +65,7 @@ type Options<T extends object> = {
   name: string;
   repository: () => CrudRepository<T>;
   schema: z.ZodSchema<T>;
-  logger: () => logger.Logger;
+  logger: () => sLogger.Logger;
   readPermissions?: authentication_strategy.Permissions[];
   writePermissions?: authentication_strategy.Permissions[];
   endpoints: Partial<EndpointList<T>>;
@@ -68,7 +74,7 @@ type PermissionsOptions<T extends schemas.VisibilityInterface> = {
   router: Router;
   name: string;
   repository: () => VisibilityRepositoryInterface<T>;
-  logger: () => logger.Logger;
+  logger: () => sLogger.Logger;
   writePermissions?: authentication_strategy.Permissions[];
   afterVisibilityChangeCallback?: (id: string, visibility: T) => Promise<void>;
 };
@@ -127,7 +133,7 @@ export const injectDefaultVisibility =
   };
 
 export const validateRequestBody =
-  (schema: z.ZodSchema, logger: () => logger.Logger) =>
+  (schema: z.ZodSchema, logger: () => sLogger.Logger) =>
   (req: Request, res: Response, next: NextFunction) => {
     try {
       schema.parse(req.body);
@@ -176,21 +182,23 @@ export const verifyPermission = async (
   if (obj.visibility == schemas.Visibility.Public && permission == "execute")
     return true;
 
+  const isAdministrator = user.permissions.includes(
+    authentication_strategy.Permissions.Administration
+  );
+
+  if (isAdministrator) {
+    return true;
+  }
   // Administrators always have READ permissions on all objects
-  const askReadAndUserIsAdmin =
-    permission == "read" &&
-    user.permissions.includes(
-      authentication_strategy.Permissions.Administration
-    );
-
-  // Administrators always have full permission on orphaned objects
-  const objectIsOphanAndUserIsAdmin =
-    (obj.creator === undefined || obj.creator === null) &&
-    user.permissions.includes(
-      authentication_strategy.Permissions.Administration
-    );
-
-  if (askReadAndUserIsAdmin || objectIsOphanAndUserIsAdmin) return true;
+  // const askReadAndUserIsAdmin = permission == "read" && isAdministrator;
+  //
+  // // Administrators always have full permission on orphaned objects
+  // const objectIsOrphanAndUserIsAdmin =
+  //   (obj.creator === undefined || obj.creator === null) && isAdministrator;
+  //
+  // if (askReadAndUserIsAdmin || objectIsOrphanAndUserIsAdmin) {
+  //   return true;
+  // }
 
   const objectIsPrivate = obj.visibility == schemas.Visibility.Private;
 
@@ -199,9 +207,19 @@ export const verifyPermission = async (
     return false;
   }
 
-  const userProjects = await userProjectsCache().get(user.id, () =>
-    userRepository().projectsByUser(user.id)
-  );
+  const userProjects = await userProjectsCache().get(user.id, async () => {
+    try {
+      return await userRepository().projectsByUser(user.id);
+    } catch (err) {
+      logger()
+        .child({
+          id: user.id,
+          error: unknownToString(err),
+        })
+        .error("Error while finding project by user");
+      return [];
+    }
+  });
   return (
     !!obj.projects &&
     obj.projects.length > 0 &&

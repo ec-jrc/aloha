@@ -131,39 +131,8 @@ function MobileNavLink({
   );
 }
 
-export default function Header() {
-  const user = useContext(UserContext);
-  const [isMobile, setIsMobile] = useState(false);
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-
-  useEffect(() => {
-    const checkDevice = () => {
-      setIsMobile(window.innerWidth < 768);
-    };
-
-    checkDevice();
-    window.addEventListener("resize", checkDevice);
-    return () => window.removeEventListener("resize", checkDevice);
-  }, []);
-
-  // Close mobile menu when clicking outside or on menu items
-  useEffect(() => {
-    if (mobileMenuOpen) {
-      const handleClickOutside = (e: MouseEvent) => {
-        const target = e.target as HTMLElement;
-        if (
-          !target.closest(".mobile-menu") &&
-          !target.closest(".menu-trigger")
-        ) {
-          setMobileMenuOpen(false);
-        }
-      };
-      document.addEventListener("click", handleClickOutside);
-      return () => document.removeEventListener("click", handleClickOutside);
-    }
-  }, [mobileMenuOpen]);
-
-  const LogoComponent = () => (
+function LogoComponent() {
+  return (
     <div
       className="text-3xl font-light tracking-widest cursor-pointer transition-colors hover:text-slate-100"
       onClick={() => (window.location.href = "/")}
@@ -171,8 +140,18 @@ export default function Header() {
       A L O H A
     </div>
   );
+}
 
-  const MobileMenu = () => (
+function MobileMenu({
+  mobileMenuOpen,
+  setMobileMenuOpen,
+}: {
+  mobileMenuOpen: boolean;
+  setMobileMenuOpen: React.Dispatch<React.SetStateAction<boolean>>;
+}) {
+  const user = useContext(UserContext);
+
+  return (
     <>
       {/* Backdrop */}
       {mobileMenuOpen && (
@@ -313,6 +292,39 @@ export default function Header() {
       </div>
     </>
   );
+}
+
+export default function Header() {
+  const user = useContext(UserContext);
+  const [isMobile, setIsMobile] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  useEffect(() => {
+    const checkDevice = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+
+    checkDevice();
+    window.addEventListener("resize", checkDevice);
+    return () => window.removeEventListener("resize", checkDevice);
+  }, []);
+
+  // Close mobile menu when clicking outside or on menu items
+  useEffect(() => {
+    if (mobileMenuOpen) {
+      const handleClickOutside = (e: MouseEvent) => {
+        const target = e.target as HTMLElement;
+        if (
+          !target.closest(".mobile-menu") &&
+          !target.closest(".menu-trigger")
+        ) {
+          setMobileMenuOpen(false);
+        }
+      };
+      document.addEventListener("click", handleClickOutside);
+      return () => document.removeEventListener("click", handleClickOutside);
+    }
+  }, [mobileMenuOpen]);
 
   if (isMobile) {
     return (
@@ -323,7 +335,7 @@ export default function Header() {
         </div> */}
 
         {/* Mobile Menu */}
-        <MobileMenu />
+        <MobileMenu mobileMenuOpen={mobileMenuOpen} setMobileMenuOpen={setMobileMenuOpen} />
 
         {/* Mobile Bottom Navigation Bar */}
         <div className="fixed bottom-0 left-0 right-0 z-30 bg-slate-900/98 backdrop-blur-lg border-t border-slate-700/50">

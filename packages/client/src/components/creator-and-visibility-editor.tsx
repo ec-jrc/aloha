@@ -13,23 +13,22 @@ OF ANY KIND, either express or implied. See the Licence for the specific languag
 governing permissions and limitations under the Licence.
 */
 
+import { usePermissionChecker } from "@/hooks/use-permission-checker";
 import { getUserDetail } from "@/services/users";
 import {
   CreatorServiceFunc,
   VisibilityServiceFunc,
   WithErrors,
 } from "@/services/utils";
-import { authentication_strategy, schemas } from "aloha-shared";
-import { useContext, useEffect, useMemo, useState } from "react";
+import { schemas } from "aloha-shared";
+import { useEffect, useMemo, useState } from "react";
 import { CreatorEditDialog } from "./creator-edit-dialog";
 import VisibilityEditDialog from "./visibility-edit-dialog";
-import { UserContext } from "@/context/contexes";
-import { usePermissionChecker } from "@/hooks/use-permission-checker";
 // import { Badge } from "./ui/badge";
-import { UserIcon, EyeIcon } from "@heroicons/react/16/solid";
-import { Pencil } from "lucide-react";
 import { getProjectsList } from "@/services/projects";
 import { isDefined } from "@/utils/type-utils";
+import { EyeIcon, UserIcon } from "@heroicons/react/16/solid";
+import { Pencil } from "lucide-react";
 
 type Props = {
   item: (
@@ -72,8 +71,8 @@ export function CreatorAndVisibilityEditor({
 }: Props) {
   const [projects, setProjects] = useState<schemas.ProjectWithId[]>([]);
 
-  const permissionCheker = usePermissionChecker();
-  const loggedUser = useContext(UserContext);
+  const permissionChecker = usePermissionChecker();
+  const loggedUser = permissionChecker.user();
   const [creatorUser, setCreatorUser] = useState<schemas.UserWithId | null>(
     null
   );
@@ -81,10 +80,10 @@ export function CreatorAndVisibilityEditor({
   const canSeePermissionBox = useMemo(() => {
     return (
       item &&
-      (permissionCheker.isAdministrator() ||
-        permissionCheker.hasOwnership(item))
+      (permissionChecker.isAdministrator() ||
+        permissionChecker.hasOwnership(item))
     );
-  }, [item, permissionCheker]);
+  }, [item, permissionChecker]);
 
   useEffect(() => {
     const fetchUser = async () => {
@@ -104,25 +103,22 @@ export function CreatorAndVisibilityEditor({
       }
     };
 
-    fetchUser();
+    void fetchUser();
   }, [canSeePermissionBox, item, item.creator, loggedUser]);
 
-  const canEditCreator = useMemo(() => {
-    return loggedUser?.permissions.includes(
-      authentication_strategy.Permissions.Administration
-    );
-  }, [loggedUser?.permissions]);
-
-  const canEditVisibility = useMemo(() => {
+  const canEditItem = useMemo(() => {
     return (
       !("isError" in item) &&
-      item.creator === loggedUser?.id &&
-      setVisibilityService
+      (permissionChecker.hasOwnership(item) ||
+        permissionChecker.isAdministrator())
     );
-  }, [item, loggedUser?.id, setVisibilityService]);
+  }, [item, permissionChecker]);
+
+  const canEditVisibility = canEditItem && setVisibilityService;
+  const canEditCreator = canEditItem && setCreatorService;
 
   useEffect(() => {
-    getProjectsList().then((projects) => {
+    void getProjectsList().then((projects) => {
       const itemProjects = (item.projects || [])
         .map((e) => projects.find((p) => p.id === e))
         .filter((e) => isDefined(e));
@@ -154,7 +150,7 @@ export function CreatorAndVisibilityEditor({
               </dt>
               <dd className="text-sm font-medium text-gray-900">
                 {creatorUser?.fullName ??
-                  (permissionCheker.isAdministrator() ? (
+                  (permissionChecker.isAdministrator() ? (
                     <span className="text-red-600 font-semibold">
                       Unknown user
                     </span>

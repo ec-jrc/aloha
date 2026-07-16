@@ -45,7 +45,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useService } from "@/hooks/useService";
+import { useService } from "@/hooks/use-service";
 import { cn } from "@/lib/utils";
 import {
   CalendarIcon,

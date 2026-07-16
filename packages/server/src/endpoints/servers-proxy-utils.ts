@@ -12,22 +12,36 @@ the Licence is distributed on an “AS IS” basis, WITHOUT WARRANTIES OR CONDIT
 OF ANY KIND, either express or implied. See the Licence for the specific language
 governing permissions and limitations under the Licence.
 */
-import * as express from "express";
 import { authentication_strategy } from "aloha-shared";
-import { A2AServer } from "../connections/a2a-server";
-import { assertFieldInObject } from "../utils/type-utils";
+import * as express from "express";
 import z from "zod";
-import { getLogger } from "../injector/provide-logger";
-import { injector } from "../injector/injector";
-import { AGENT_PROJECT } from "../middleware/jwt-authentication";
-import { HTTPError, verifyPermission } from "./utils";
+import { A2AServer } from "../connections/a2a-server";
 import MCPServer from "../connections/mcp-server";
+import { injector } from "../injector/injector";
+import { getLogger } from "../injector/provide-logger";
+import { AGENT_PROJECT } from "../middleware/jwt-authentication";
+import {
+  filterOnlyA2AClient,
+  findConnectedConnection,
+} from "../utils/connection-utils";
+import { assertFieldInObject } from "../utils/type-utils";
+import { HTTPError, verifyPermission } from "./utils";
+import { AgentSkill } from "@a2a-js/sdk";
 
 const logger = getLogger("SERVERS-PROXY-COMMON");
 const mcpManager = () => injector().resolve("mcpManager");
 const agentRepository = () => injector().resolve("agentRepository");
 const agentCache = () => injector().resolve("agentsCache");
 
+type A2ARegistryV1 = {
+  version: 1.0;
+  clients: Array<{
+    name: string;
+    description: string;
+    url: string;
+    skills: AgentSkill[];
+  }>;
+};
 export async function getServer(
   path: string | undefined,
   req: express.Request,
@@ -187,4 +201,38 @@ export async function getServer(
     }
   }
   return undefined;
+}
+
+export function serveRegistry(
+  req: express.Request,
+  res: express.Response,
+  server: MCPServer | A2AServer
+) {
+  const manager = mcpManager();
+  const allClients = findConnectedConnection(manager, server.options, false);
+  const a2aClients = filterOnlyA2AClient(allClients);
+
+  const registry: A2ARegistryV1 = {
+    version: 1.0,
+    clients: a2aClients
+      .map((e) => {
+        const card = e.getAgentCard();
+        if (!card) {
+          return undefined;
+        }
+        let url = `${req.protocol}://${req.host}`;
+        const basePah = (manager.getServer(e.id) as A2AServer).basePathToServe;
+        url = `${url}${basePah}/jsonrpc`;
+
+        return {
+          url,
+          name: card.name,
+          description: card.description,
+          skills: card.skills,
+        };
+      })
+      .filter((e) => !!e),
+  };
+
+  res.json(registry).end();
 }

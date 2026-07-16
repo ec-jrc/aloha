@@ -40,7 +40,7 @@ import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { usePermissionChecker } from "@/hooks/use-permission-checker";
 import { usePlatformPluginsForSlotId } from "@/hooks/use-platform-plugins";
-import { useService } from "@/hooks/useService";
+import { useService } from "@/hooks/use-service";
 import { UISlot } from "@/plugins/definitions/ui-slot";
 import { isWithErrorsObject, WithErrors } from "@/services/utils";
 import {
@@ -78,6 +78,11 @@ function NewVersionDialog({
     | WithErrors<schemas.MCPConnectionOptionsWithId>;
 }) {
   const navigate = useNavigate();
+  const permissionChecker = usePermissionChecker();
+
+  const canOperateOnItem =
+    permissionChecker.isAdministrator() ||
+    permissionChecker.hasOwnership(client);
 
   const [loading, allVersions] = useService(
     async (c) => {
@@ -100,7 +105,7 @@ function NewVersionDialog({
 
   const createNewVersion = useCallback(async () => {
     try {
-      if (!client || isWithErrorsObject(client)) {
+      if (!client || isWithErrorsObject(client) || !canOperateOnItem) {
         return;
       }
       const clientId = client.id;
@@ -110,7 +115,7 @@ function NewVersionDialog({
       console.error("Unable to create new client version", err);
       toast.error("Unable to create a new client version");
     }
-  }, [client, navigate]);
+  }, [client, navigate, canOperateOnItem]);
 
   if (!client || isWithErrorsObject(client)) {
     return null;
@@ -130,7 +135,7 @@ function NewVersionDialog({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button>
+        <Button disabled={!canOperateOnItem}>
           <FileStack /> Client Versions
         </Button>
       </DropdownMenuTrigger>
@@ -140,7 +145,7 @@ function NewVersionDialog({
             New Client Version
           </DropdownMenuItem>
         </DropdownMenuGroup>
-        {hasVersions && (
+        {hasVersions && canOperateOnItem && (
           <DropdownMenuGroup>
             <DropdownMenuSeparator />
             {allVersions.map((v) => {
@@ -187,9 +192,9 @@ export default function MCPClientDetailsPage() {
     "client-workflow-slot"
   );
 
-  const isAdministrator = useMemo(() => {
-    return permissionChecker.isAdministrator();
-  }, [permissionChecker]);
+  const canUserOperateOnItem =
+    permissionChecker.isAdministrator() ||
+    permissionChecker.hasOwnership(connection);
 
   const canTheUserOperateOnWorkflow = useMemo(
     () =>
@@ -228,7 +233,8 @@ export default function MCPClientDetailsPage() {
   const workflowSlotContext = useMemo(
     () => ({
       readonly: !canTheUserOperateOnWorkflow,
-      clientId: id,
+      itemId: id,
+      type: "client",
       afterSave: async () => forceFetch(),
     }),
     [id, forceFetch, canTheUserOperateOnWorkflow]
@@ -250,7 +256,7 @@ export default function MCPClientDetailsPage() {
             The requested MCP client could not be found.
           </p>
           <MCPClientDeleteDialog
-            disabled={!isAdministrator}
+            disabled={!canUserOperateOnItem}
             client={{
               id,
               isError: true,
@@ -394,6 +400,7 @@ export default function MCPClientDetailsPage() {
               )}
             </div>
             {connection.id !== undefined &&
+              canUserOperateOnItem &&
               clientWorkflowPlugins.length > 0 && (
                 <div className="space-y-4 mt-6">
                   <div className="flex items-center gap-2">

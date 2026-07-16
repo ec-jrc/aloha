@@ -38,6 +38,7 @@ import { getAgentsList } from "./agents";
 import { getConnectionList } from "./clients";
 import {
   AlohaMCPServer,
+  AlohaA2AAgentMCPServer,
   AlohaTestbedAgentMCPServer,
 } from "./mcp-tool-adapters";
 
@@ -187,7 +188,11 @@ export async function createAgentInstance(
     .map((e) => {
       switch (e.type) {
         case "client":
+          return new AlohaMCPServer(e.id, e.name, e.type);
         case "agent":
+          if (e.serverProtocol === "a2a") {
+            return new AlohaA2AAgentMCPServer(e.id, e.name);
+          }
           return new AlohaMCPServer(e.id, e.name, e.type);
         case "testbedAgent":
           return new AlohaTestbedAgentMCPServer(
@@ -339,7 +344,7 @@ export function agentInstanceMergeEvents(
 ) {
   const result: Array<AgentInstaceMergedEvent> = [];
 
-  let outputTextDeltaAcculumator: string | null = null;
+  let outputTextDeltaAccumulator: string | null = null;
 
   events.forEach((agentEvent, idx) => {
     if (agentEvent.type === "custom_agent_event") {
@@ -382,14 +387,14 @@ export function agentInstanceMergeEvents(
           id: event.data.providerData?.id || `rs-${idx}`,
         });
       } else if (event.data.type === "output_text_delta") {
-        if (outputTextDeltaAcculumator === null) {
-          outputTextDeltaAcculumator = event.data.delta;
+        if (outputTextDeltaAccumulator === null) {
+          outputTextDeltaAccumulator = event.data.delta;
         } else {
-          outputTextDeltaAcculumator += event.data.delta;
+          outputTextDeltaAccumulator += event.data.delta;
         }
       } else if (event.data.type === "response_done") {
-        if (outputTextDeltaAcculumator !== null) {
-          outputTextDeltaAcculumator = null;
+        if (outputTextDeltaAccumulator !== null) {
+          outputTextDeltaAccumulator = null;
         }
         result.push({
           agentName: agentEvent.agentInstance.agentDetail.name,
@@ -431,16 +436,16 @@ export function agentInstanceMergeEvents(
     }
   });
 
-  if (outputTextDeltaAcculumator !== null) {
+  if (outputTextDeltaAccumulator !== null) {
     const lastEvent = events[events.length - 1];
     if (typeof lastEvent !== "string") {
       result.push({
         agentName: lastEvent.agentInstance.agentDetail.name,
-        progress: outputTextDeltaAcculumator,
+        progress: outputTextDeltaAccumulator,
         type: "llm_response_in_progress",
         id: `otdf-${result.length}`,
       });
-      outputTextDeltaAcculumator = null;
+      outputTextDeltaAccumulator = null;
     }
   }
 

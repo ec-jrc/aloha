@@ -16,7 +16,7 @@ governing permissions and limitations under the Licence.
 import { OAuthClientProvider } from "@modelcontextprotocol/sdk/client/auth.js";
 import { schemas } from "aloha-shared";
 import {
-  TokenExhangeAuthProvider,
+  TokenExchangeAuthProvider,
   TokenSetProvider,
 } from "../middleware/oidc/oidc-support";
 
@@ -48,7 +48,7 @@ export function getAdditionalAuthenticationHeaders(
       if (!tokenSetProvider) {
         throw Error(`TokenSet is undefined, cannot exchange it`);
       }
-      authProvider = new TokenExhangeAuthProvider(
+      authProvider = new TokenExchangeAuthProvider(
         authentication.clientId,
         tokenSetProvider
       );

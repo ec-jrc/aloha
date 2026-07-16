@@ -30,6 +30,26 @@ export function serverProxyA2ARoutes() {
     "SERVERS-PROXY-A2A",
     getUserWithIdFromRepository
   );
+
+  router.get(
+    "/:path/registry/v1",
+    optionalOIDCMiddleware,
+    authorise([authentication_strategy.Permissions.ProxyApiAccess]),
+    async (req, res) => {
+      const server = await getServer(undefined, req, res, A2AServer);
+      if (server) {
+        return server.registry(req, res);
+      } else {
+        logger()
+          .child({ path: req.params.path })
+          .error("Unable to find A2A server");
+        return res.status(404).json({
+          error: "Unable to find the A2A server",
+        });
+      }
+    }
+  );
+
   router.use(
     "/:path",
     optionalOIDCMiddleware,
@@ -37,11 +57,14 @@ export function serverProxyA2ARoutes() {
     async (req, res, next) => {
       const server = await getServer(undefined, req, res, A2AServer);
       if (server) {
-        server.router(req, res, next);
+        return server.router(req, res, next);
       } else {
         logger()
           .child({ path: req.params.path })
           .error("Unable to find A2A server");
+        return res.status(404).json({
+          error: "Unable to find the A2A server",
+        });
       }
     }
   );

@@ -47,7 +47,7 @@ export function UserSelect({
   const [search, setSearch] = useState("");
 
   useEffect(() => {
-    getUsersList().then(setUsers);
+    void getUsersList().then(setUsers);
   }, []);
 
   const filteredUsers = users.filter((user) =>

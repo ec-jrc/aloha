@@ -43,7 +43,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { useService } from "@/hooks/useService";
+import { useService } from "@/hooks/use-service";
 import { isWithErrorsObject, WithErrors } from "@/services/utils";
 import { generateRandomString } from "@/utils/string-utils";
 import { exceptionToMessage, hasMessageField } from "@/utils/type-utils";
@@ -52,7 +52,7 @@ import { Pencil } from "lucide-react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { endpoints_schemas, schemas } from "aloha-shared";
 import { useState } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { useNavigate } from "react-router";
 import { catchError, filter, map, of, tap } from "rxjs";
 import { toast } from "sonner";
@@ -190,7 +190,7 @@ export default function MCPClientEditDialog({
           ...data,
           visibility: client.visibility,
         });
-        navigate(`/clients`);
+        void navigate(`/clients`);
       }
     } catch (e) {
       console.error(e);
@@ -285,7 +285,7 @@ export default function MCPClientEditDialog({
     }
   }
 
-  const authentication = form.watch("authentication");
+  const authentication = useWatch({ control: form.control, name: "authentication" });
 
   return (
     <>

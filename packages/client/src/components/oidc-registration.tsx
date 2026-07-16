@@ -14,7 +14,7 @@ governing permissions and limitations under the Licence.
 */
 
 import { usePermissionChecker } from "@/hooks/use-permission-checker";
-import { useService } from "@/hooks/useService";
+import { useService } from "@/hooks/use-service";
 import {
   isConnectionRegisteredWithIdentityPropagationService,
   registerWithIdentityPropagationService,

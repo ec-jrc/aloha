@@ -21,7 +21,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
+import SearchBox from "@/components/search-box";
 import {
   ChatBubbleOvalLeftEllipsisIcon,
   ClipboardDocumentListIcon,
@@ -30,21 +30,40 @@ import {
 } from "@heroicons/react/16/solid";
 import { endpoints_schemas } from "aloha-shared";
 import { formatDistanceToNow } from "date-fns";
-import { useCallback, useState } from "react";
+import { useState } from "react";
 import { useNavigate } from "react-router";
 import { getConnectionList } from "../../services/clients";
 import MCPClientEditDialog from "./client-edit-dialog";
 import { WithErrors } from "@/services/utils";
-import { useService } from "@/hooks/useService";
+import { useService } from "@/hooks/use-service";
 import Loading from "@/components/loading";
 import { TagsList } from "@/components/tags-list";
 import { CardHeaderConnectionIndicator } from "@/components/card-header-connection-indicator";
 
 const PING_TIMEOUT = 5000;
 
+type ConnectionItem =
+  | endpoints_schemas.MCPConnectionStatus
+  | WithErrors<endpoints_schemas.MCPConnectionStatus>;
+
+const connectionPredicate = (c: ConnectionItem, search: string) => {
+  if ("isError" in c) return true;
+  return search
+    .toLowerCase()
+    .split(" ")
+    .some(
+      (f) =>
+        c.name.toLowerCase().includes(f) ||
+        !!c.description?.toLowerCase().includes(f) ||
+        !!c.tags?.some((t) => t.toLowerCase().includes(f))
+    );
+};
+
 export default function MCPClientsListPage() {
   const navigate = useNavigate();
-  const [filter, setFilter] = useState<string>("");
+  const [filteredConnections, setFilteredConnections] = useState<
+    ConnectionItem[] | null
+  >(null);
 
   const [loading, connections] = useService(
     getConnectionList,
@@ -54,27 +73,7 @@ export default function MCPClientsListPage() {
     PING_TIMEOUT
   );
 
-  const filterConnections = useCallback(
-    (
-      c:
-        | endpoints_schemas.MCPConnectionStatus
-        | WithErrors<endpoints_schemas.MCPConnectionStatus>
-    ) => {
-      if (filter.length < 3) return true;
-      if ("isError" in c) return true;
-      return filter
-        .toLowerCase()
-        .split(" ")
-        .map(
-          (f) =>
-            c.name.toLowerCase().includes(f) ||
-            !!c.description?.toLowerCase().includes(f) ||
-            !!c.tags?.some((t) => t.toLowerCase().includes(f))
-        )
-        .some((f) => f);
-    },
-    [filter]
-  );
+  const displayedConnections = filteredConnections ?? connections ?? [];
 
   return (
     <div data-testid="client-list-page-witness" className="max-w-8xl mx-auto">
@@ -88,21 +87,21 @@ export default function MCPClientsListPage() {
         </div>
 
         {/* Search and Filter */}
-
-        <Input
-          type="search"
-          className="w-full bg-white border border-gray-300 rounded-lg px-4 py-2"
-          placeholder="Search clients by name, description, or tags..."
-          value={filter}
-          onChange={(e) => setFilter(e.target.value)}
-        />
+        {connections && (
+          <SearchBox
+            items={connections}
+            predicate={connectionPredicate}
+            onFilter={setFilteredConnections}
+            placeholder="Search clients by name, description, or tags..."
+          />
+        )}
       </div>
 
       {/* Client Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
         {!loading &&
           connections &&
-          connections.filter(filterConnections).map((c) => (
+          displayedConnections.map((c) => (
             <Card
               key={c.id}
               onClick={() => navigate(`/clients/${c.id}`)}
@@ -180,36 +179,37 @@ export default function MCPClientsListPage() {
       {loading && <Loading message="Loading clients..." />}
 
       {/* Empty State */}
-      {!loading &&
-        connections &&
-        connections.filter(filterConnections).length === 0 && (
-          <div className="text-center py-16 bg-gray-50 rounded-xl">
-            <div className="inline-block p-4 bg-white rounded-full shadow-md mb-4">
-              <svg
-                className="w-12 h-12 text-gray-400"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth="2"
-                  d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                ></path>
-              </svg>
-            </div>
-            <h3 className="text-xl font-medium text-gray-900 mb-2">
-              No clients found
-            </h3>
-            <p className="text-gray-500 mb-6">
-              {filter
-                ? "No clients match your search criteria"
-                : "There are no clients available at the moment"}
-            </p>
-            <MCPClientEditDialog disabled={false} client={undefined} />
+      {!loading && connections && displayedConnections.length === 0 && (
+        <div className="text-center py-16 bg-gray-50 rounded-xl">
+          <div className="inline-block p-4 bg-white rounded-full shadow-md mb-4">
+            <svg
+              className="w-12 h-12 text-gray-400"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+              ></path>
+            </svg>
           </div>
-        )}
+          <h3 className="text-xl font-medium text-gray-900 mb-2">
+            No clients found
+          </h3>
+          <p className="text-gray-500 mb-6">
+            {filteredConnections &&
+            filteredConnections.length === 0 &&
+            connections &&
+            connections.length > 0
+              ? "No clients match your search criteria"
+              : "There are no clients available at the moment"}
+          </p>
+          <MCPClientEditDialog disabled={false} client={undefined} />
+        </div>
+      )}
     </div>
   );
 }

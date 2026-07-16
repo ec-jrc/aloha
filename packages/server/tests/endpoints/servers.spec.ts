@@ -14,27 +14,25 @@ governing permissions and limitations under the Licence.
 */
 // [Note: File generated using Generative AI technology]
 
+import { schemas } from "aloha-shared";
 import { expect } from "chai";
 import { request } from "chai-http";
-import sinon from "sinon";
 import { Express } from "express";
-import { schemas } from "aloha-shared";
-import {
-  createMockDependencies,
-  setupMockInjector,
-  restoreInjector,
-  createTestApp,
-  setupAuthPlugins,
-  teardownAuthPlugins,
-  adminUser,
-  regularUser,
-  adminDbUser,
-  regularDbUser,
-  MockDependencies,
-} from "./endpoint-test-helpers";
-import { setAuthPlugins } from "../../src/middleware/authorise";
 import { serverRoutes } from "../../src/endpoints/servers";
 import { HTTPError } from "../../src/endpoints/utils";
+import { setAuthPlugins } from "../../src/middleware/authorise";
+import {
+  adminDbUser,
+  adminUser,
+  createMockDependencies,
+  createTestApp,
+  MockDependencies,
+  regularUser,
+  restoreInjector,
+  setupAuthPlugins,
+  setupMockInjector,
+  teardownAuthPlugins,
+} from "./endpoint-test-helpers";
 
 const http = (app: Express) => request.execute(app);
 
@@ -71,7 +69,10 @@ describe("serverRoutes", () => {
     deps.serverOptionsRepository.findById.reset();
     deps.serverOptionsRepository.findById.resolves(null);
     deps.serverOptionsRepository.create.reset();
-    deps.serverOptionsRepository.create.callsFake(async (item: any) => ({ ...item, id: "s-new" }));
+    deps.serverOptionsRepository.create.callsFake(async (item: any) => ({
+      ...item,
+      id: "s-new",
+    }));
     deps.serverOptionsRepository.updateById.reset();
     deps.serverOptionsRepository.updateById.resolves(true);
     deps.serverOptionsRepository.deleteById.reset();
@@ -99,7 +100,9 @@ describe("serverRoutes", () => {
   describe("GET / (list)", () => {
     it("should return servers with isOnline status", async () => {
       deps.serverOptionsRepository.findByPattern.resolves([serverWithId]);
-      deps.mcpManager.getServer.withArgs("s1").returns({ options: serverWithId });
+      deps.mcpManager.getServer
+        .withArgs("s1")
+        .returns({ options: serverWithId });
       const res = await http(app).get("/api/servers");
       expect(res.status).to.equal(200);
       expect(res.body).to.have.lengthOf(1);
@@ -164,26 +167,36 @@ describe("serverRoutes", () => {
   describe("POST /:id (update)", () => {
     it("should update a server", async () => {
       deps.serverOptionsRepository.findById.resolves(serverWithId);
-      const res = await http(app).post("/api/servers/s1").send({ name: "Updated" });
+      const res = await http(app)
+        .post("/api/servers/s1")
+        .send({ name: "Updated" });
       expect(res.status).to.equal(204);
     });
 
     it("should return 404 when server not found", async () => {
-      const res = await http(app).post("/api/servers/unknown").send({ name: "X" });
+      const res = await http(app)
+        .post("/api/servers/unknown")
+        .send({ name: "X" });
       expect(res.status).to.equal(404);
     });
 
     it("should return 409 for duplicate serverPath from another server", async () => {
       deps.serverOptionsRepository.findById.resolves(serverWithId);
-      deps.serverOptionsRepository.findByPattern.resolves([{ ...validServer, id: "s-other" }]);
-      const res = await http(app).post("/api/servers/s1").send({ serverPath: "test-server" });
+      deps.serverOptionsRepository.findByPattern.resolves([
+        { ...validServer, id: "s-other" },
+      ]);
+      const res = await http(app)
+        .post("/api/servers/s1")
+        .send({ serverPath: "test-server" });
       expect(res.status).to.equal(409);
     });
 
     it("should allow same serverPath for the same server", async () => {
       deps.serverOptionsRepository.findById.resolves(serverWithId);
       deps.serverOptionsRepository.findByPattern.resolves([serverWithId]);
-      const res = await http(app).post("/api/servers/s1").send({ serverPath: "test-server" });
+      const res = await http(app)
+        .post("/api/servers/s1")
+        .send({ serverPath: "test-server" });
       expect(res.status).to.equal(204);
     });
   });
@@ -209,16 +222,33 @@ describe("serverRoutes", () => {
   describe("POST /:id/_connect/:cid", () => {
     it("should associate a client to a server", async () => {
       deps.serverOptionsRepository.findById.resolves(serverWithId);
-      deps.mcpManager.getServer.returns({ options: { ...serverWithId, connections: [] } });
-      deps.mcpManager.getConnection.returns({ connectionOptions: { ...validServer, creator: "user-1", visibility: schemas.Visibility.Public } });
+      deps.mcpManager.getServer.returns({
+        options: { ...serverWithId, connections: [] },
+      });
+      deps.mcpManager.getConnection.returns({
+        connectionOptions: {
+          ...validServer,
+          creator: "user-1",
+          visibility: schemas.Visibility.Public,
+        },
+      });
       const res = await http(app).post("/api/servers/s1/_connect/c1");
       expect(res.status).to.equal(204);
-      expect(deps.serverOptionsRepository.addNewConnection.calledOnce).to.be.true;
+      expect(deps.serverOptionsRepository.addNewConnection.calledOnce).to.be
+        .true;
     });
 
     it("should return 204 if already connected", async () => {
-      deps.mcpManager.getServer.returns({ options: { ...serverWithId, connections: ["c1"] } });
-      deps.mcpManager.getConnection.returns({ connectionOptions: { ...validServer, creator: "user-1", visibility: schemas.Visibility.Public } });
+      deps.mcpManager.getServer.returns({
+        options: { ...serverWithId, connections: ["c1"] },
+      });
+      deps.mcpManager.getConnection.returns({
+        connectionOptions: {
+          ...validServer,
+          creator: "user-1",
+          visibility: schemas.Visibility.Public,
+        },
+      });
       const res = await http(app).post("/api/servers/s1/_connect/c1");
       expect(res.status).to.equal(204);
       expect(deps.serverOptionsRepository.addNewConnection.called).to.be.false;
@@ -230,7 +260,9 @@ describe("serverRoutes", () => {
     });
 
     it("should return 404 when connection not found", async () => {
-      deps.mcpManager.getServer.returns({ options: { ...serverWithId, connections: [] } });
+      deps.mcpManager.getServer.returns({
+        options: { ...serverWithId, connections: [] },
+      });
       const res = await http(app).post("/api/servers/s1/_connect/c1");
       expect(res.status).to.equal(404);
     });
@@ -238,19 +270,31 @@ describe("serverRoutes", () => {
 
   describe("POST /:id/_disconnect/:cid", () => {
     it("should dissociate a client from a server", async () => {
-      deps.serverOptionsRepository.findById.resolves({ ...serverWithId, connections: ["c1"] });
-      deps.mcpManager.getServer.returns({ options: { ...serverWithId, connections: ["c1"] } });
+      deps.serverOptionsRepository.findById.resolves({
+        ...serverWithId,
+        connections: ["c1"],
+      });
+      deps.mcpManager.getServer.returns({
+        options: { ...serverWithId, connections: ["c1"] },
+      });
       const res = await http(app).post("/api/servers/s1/_disconnect/c1");
       expect(res.status).to.equal(204);
-      expect(deps.serverOptionsRepository.replaceConnections.calledOnce).to.be.true;
+      expect(deps.serverOptionsRepository.replaceConnections.calledOnce).to.be
+        .true;
     });
 
     it("should return 204 if not connected", async () => {
-      deps.serverOptionsRepository.findById.resolves({ ...serverWithId, connections: [] });
-      deps.mcpManager.getServer.returns({ options: { ...serverWithId, connections: [] } });
+      deps.serverOptionsRepository.findById.resolves({
+        ...serverWithId,
+        connections: [],
+      });
+      deps.mcpManager.getServer.returns({
+        options: { ...serverWithId, connections: [] },
+      });
       const res = await http(app).post("/api/servers/s1/_disconnect/c1");
       expect(res.status).to.equal(204);
-      expect(deps.serverOptionsRepository.replaceConnections.called).to.be.false;
+      expect(deps.serverOptionsRepository.replaceConnections.called).to.be
+        .false;
     });
 
     it("should return 404 when server not found", async () => {
@@ -270,7 +314,9 @@ describe("serverRoutes", () => {
     });
 
     it("should return 500 on error", async () => {
-      deps.serverOptionsRepository.findByConnectionId.rejects(new Error("db error"));
+      deps.serverOptionsRepository.findByConnectionId.rejects(
+        new Error("db error")
+      );
       const res = await http(app).get("/api/servers/by_connection_id/c1");
       expect(res.status).to.equal(500);
     });
@@ -280,7 +326,9 @@ describe("serverRoutes", () => {
 
   describe("authentication", () => {
     it("should return 401 for unauthenticated user on list", async () => {
-      const unauthApp = createTestApp(serverRoutes(), { basePath: "/api/servers" });
+      const unauthApp = createTestApp(serverRoutes(), {
+        basePath: "/api/servers",
+      });
       const res = await http(unauthApp).get("/api/servers");
       expect(res.status).to.equal(401);
     });
@@ -293,13 +341,18 @@ describe("serverRoutes", () => {
 
     before(() => {
       setAuthPlugins([]);
-      restrictedApp = createTestApp(serverRoutes(), { user: regularUser, basePath: "/api/servers" });
+      restrictedApp = createTestApp(serverRoutes(), {
+        user: regularUser,
+        basePath: "/api/servers",
+      });
     });
 
     after(() => setupAuthPlugins());
 
     it("should return 403 on create without ServersWrite", async () => {
-      const res = await http(restrictedApp).post("/api/servers").send(validServer);
+      const res = await http(restrictedApp)
+        .post("/api/servers")
+        .send(validServer);
       expect(res.status).to.equal(403);
     });
 
@@ -319,7 +372,9 @@ describe("serverRoutes", () => {
     });
 
     it("should return HTTPError status code", async () => {
-      deps.serverOptionsRepository.findByPattern.rejects(new HTTPError(503, "Unavailable"));
+      deps.serverOptionsRepository.findByPattern.rejects(
+        new HTTPError(503, "Unavailable")
+      );
       const res = await http(app).get("/api/servers");
       expect(res.status).to.equal(503);
       expect(res.body.error).to.equal("Unavailable");

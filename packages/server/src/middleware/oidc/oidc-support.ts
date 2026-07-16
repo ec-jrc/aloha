@@ -424,7 +424,7 @@ async function exchangeAccessToken(
   return newTokenSet.access_token;
 }
 
-export class TokenExhangeAuthProvider implements OAuthClientProvider {
+export class TokenExchangeAuthProvider implements OAuthClientProvider {
   private logger: () => alogger.Logger;
   private lastExchangedToken: string | undefined;
 
@@ -433,7 +433,7 @@ export class TokenExhangeAuthProvider implements OAuthClientProvider {
     private tokenSetProvider: TokenSetProvider | undefined
   ) {
     this.logger = () =>
-      getLogger("TokenExhangeAuthProvider")().child({ clientId });
+      getLogger("TOKEN-EXCHANGE-AUTH-PROVIDER")().child({ clientId });
   }
   get redirectUrl() {
     this.logger().debug("redirectUrl");

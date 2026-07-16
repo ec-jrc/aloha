@@ -14,16 +14,17 @@ governing permissions and limitations under the Licence.
 */
 
 import { schemas } from "aloha-shared";
-import { ConnectionOptionsRepository } from "../database/repositories/interfaces/connection-options-repository";
+import { MCPServerOptionsWithId } from "../../../aloha-shared/dist-module/schemas";
 import { AgentRepository } from "../database/repositories/interfaces/agent-repository-interface";
+import { ConnectionOptionsRepository } from "../database/repositories/interfaces/connection-options-repository";
 import { injector } from "../injector/injector";
 import { getLogger } from "../injector/provide-logger";
 import { TokenSetProvider } from "../middleware/oidc/oidc-support";
+import { isA2AAgent } from "../utils/a2a-utils";
 import { A2AClient } from "./a2a-client";
+import { A2AServer } from "./a2a-server";
 import MCPClient from "./mcp-client";
 import MCPServer from "./mcp-server";
-import { isA2AAgent } from "../utils/a2a-utils";
-import { A2AServer } from "./a2a-server";
 
 const logger = getLogger("MCP-MANAGER");
 const MAX_AUTOCLOSE_CLIENT_TTL = 15 * 60 * 1000;
@@ -353,6 +354,72 @@ class MCPManager {
     return this.autoCloseClients[id]?.client;
   }
 
+  public createGlobalHub() {
+    const log = logger();
+    const globalHub = this.allocateGlobalHub();
+    log
+      .child({ serverPath: globalHub.options.serverPath })
+      .debug("Creating global hub server");
+    globalHub.serve("/api/mcp/hub/messages");
+    this.servers.set(globalHub.id, globalHub);
+    this.serversByPath.set(globalHub.options.serverPath, globalHub);
+  }
+
+  filterByLatestVersion(items: MCPClient[]) {
+    return Object.values(
+      items.reduce(
+        (p, c) => {
+          const versioningInfo = c.connectionOptions.versioningInfo;
+          const id = versioningInfo?.versionGroupingUUID || c.id;
+
+          if (p[id]) {
+            const savedVersion =
+              p[id].connectionOptions.versioningInfo?.versionNumber || 0;
+
+            const currentVersion = versioningInfo?.versionNumber || 0;
+
+            if (savedVersion < currentVersion) {
+              p[id] = c;
+            }
+          } else {
+            p[id] = c;
+          }
+          return p;
+        },
+        {} as {
+          [k: string]: MCPClient;
+        }
+      )
+    );
+  }
+
+  private allocateGlobalHub(): MCPServer {
+    const allMcpClients = this.filterByLatestVersion(
+      Array.from(this.connections.values()).filter(
+        (e) => e instanceof MCPClient
+      )
+    ).map((e) => e.connectionOptions.id);
+
+    const serverOption: MCPServerOptionsWithId = {
+      id: "hub",
+      creator: "",
+      visibility: schemas.Visibility.Public,
+      name: "Aloha Global MCP",
+      serverPath: "hub",
+      type: "server",
+      description:
+        "MCP Server to use to discover and invoke all the available other MCP Server provided by Aloha",
+      connections: allMcpClients,
+    };
+
+    logger()
+      .child({
+        serverOption,
+      })
+      .debug("HUB Server configuration");
+
+    return new MCPServer(serverOption, "HUB");
+  }
   private async closeAutoCloseClients() {
     const now = Date.now();
 

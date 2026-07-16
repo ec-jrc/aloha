@@ -19,6 +19,7 @@ import {
   safeClickHandle,
   sleep,
   startIntegrationTestEnvironment,
+  startMcpEverythingServerProcess,
 } from "./utils/integration-test-support";
 import {
   getEditVisibilityButtonHandle,
@@ -28,6 +29,8 @@ import {
   getServerListPageHandle,
 } from "./utils/test-ui-utils";
 import { ElementHandle, Page } from "puppeteer";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 
 async function waitForFirstServerListed(page: Page) {
   return await page.waitForSelector(
@@ -85,6 +88,193 @@ describe("[S] Server", () => {
     await page.waitForNetworkIdle();
     await waitForFirstServerListed(page);
     await page.close();
+  });
+
+  it("should expose mcp and hub endpoint", async () => {
+    // 0. Start the MCP everything server
+    const mcpEverything = await startMcpEverythingServerProcess();
+
+    try {
+      const baseUrl = `http://localhost:${env.serverPort}`;
+
+      // Login to get a session cookie
+      const loginRes = await fetch(`${baseUrl}/api/login`, {
+        redirect: "manual",
+      });
+      const setCookie = loginRes.headers.get("set-cookie");
+      const cookie = setCookie?.split(";")[0] ?? "";
+      const headers = { "Content-Type": "application/json", Cookie: cookie };
+
+      // Create a client pointing to the everything server
+      const clientRes = await fetch(`${baseUrl}/api/client/`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          name: "test-client-" + getRandomString(),
+          serverUrl: `http://localhost:${mcpEverything.port}/mcp`,
+          serverProtocol: "http",
+          type: "client",
+          authentication: { type: "none" },
+          visibility: "public",
+          creator: "no-auth-user",
+        }),
+      });
+      expect(clientRes.ok).toBe(true);
+      // Client creation returns SSE stream; parse it to extract the client id
+      const clientSseText = await clientRes.text();
+      const clientIdMatch = clientSseText.match(/"id"\s*:\s*"([^"]+)"/);
+      expect(clientIdMatch).not.toBeNull();
+      const clientId = clientIdMatch![1]!;
+
+      // Wait for the client to connect
+      await sleep(3000);
+
+      // Create a server with a serverPath
+      const serverPath = "testsvr" + getRandomString(6);
+      const serverName = "test-server-" + getRandomString();
+      const serverRes = await fetch(`${baseUrl}/api/server/`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          name: serverName,
+          serverPath,
+          type: "server",
+          visibility: "public",
+          creator: "no-auth-user",
+        }),
+      });
+      expect(serverRes.status).toBe(204);
+
+      // Fetch the server list to get the created server's ID
+      const serverListRes = await fetch(`${baseUrl}/api/server/`, { headers });
+      const servers = (await serverListRes.json()) as Array<{
+        id: string;
+        serverPath: string;
+      }>;
+      const server = servers.find((s) => s.serverPath === serverPath);
+      expect(server).toBeDefined();
+
+      // Connect the client to the server
+      const connectRes = await fetch(
+        `${baseUrl}/api/server/${server!.id}/_connect/${clientId}`,
+        { method: "POST", headers }
+      );
+      expect(connectRes.status).toBe(204);
+
+      // 1. Create a project and token
+      const projectId = "proj" + getRandomString(6);
+      const projRes = await fetch(`${baseUrl}/api/project/`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          projectId,
+          name: "Test Project",
+          description: "test",
+        }),
+      });
+      expect(projRes.ok).toBe(true);
+
+      const tokenRes = await fetch(`${baseUrl}/api/token/`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          project: projectId,
+          expirationDate: new Date(
+            Date.now() + 24 * 60 * 60 * 1000
+          ).toISOString(),
+        }),
+      });
+      expect(tokenRes.ok).toBe(true);
+      const { token } = (await tokenRes.json()) as { token: string };
+
+      // 2. Connect to both endpoints using the MCP SDK client
+      const mcpUrl = `${baseUrl}/api/mcp/${serverPath}/mcp`;
+      const hubUrl = `${baseUrl}/api/mcp/${serverPath}/hub`;
+
+      const mcpClient = new Client(
+        { name: "test-mcp-client", version: "1.0.0" },
+        { capabilities: {} }
+      );
+      const mcpTransport = new StreamableHTTPClientTransport(new URL(mcpUrl), {
+        requestInit: { headers: { Authorization: `Bearer ${token}` } },
+      });
+      await mcpClient.connect(mcpTransport as Parameters<typeof mcpClient.connect>[0]);
+
+      const hubClient = new Client(
+        { name: "test-hub-client", version: "1.0.0" },
+        { capabilities: {} }
+      );
+      const hubTransport = new StreamableHTTPClientTransport(new URL(hubUrl), {
+        requestInit: { headers: { Authorization: `Bearer ${token}` } },
+      });
+      await hubClient.connect(hubTransport as Parameters<typeof hubClient.connect>[0]);
+
+      // 3. Check the tools available
+      const mcpTools = await mcpClient.listTools();
+      expect(mcpTools.tools.length).toBeGreaterThan(2);
+
+      const hubTools = await hubClient.listTools();
+      expect(hubTools.tools.length).toBe(2);
+      expect(hubTools.tools.map((t) => t.name).sort()).toEqual([
+        "discover_tools",
+        "invoke_tool",
+      ]);
+
+      // 4. Test the /hub endpoint
+      // Call discover_tools and search for *
+      const discoverResult = await hubClient.callTool({
+        name: "discover_tools",
+        arguments: { query: "*" },
+      });
+      const discoverText = (
+        discoverResult.content as Array<{ type: string; text: string }>
+      )[0]!.text;
+      const discoverContent = JSON.parse(discoverText) as {
+        tools: Array<{ tool: { name: string } }>;
+        total: number;
+      };
+      expect(discoverContent.total).toBeGreaterThan(0);
+
+      // Use invoke_tool to call the first tool returned
+      const firstTool = discoverContent.tools[0]!.tool.name;
+      const invokeResult = await hubClient.callTool({
+        name: "invoke_tool",
+        arguments: { toolId: firstTool, arguments: {} },
+      });
+      expect(invokeResult.content).toBeDefined();
+
+      // 5. Discover the get-env tool and call it
+      const discoverEnvResult = await hubClient.callTool({
+        name: "discover_tools",
+        arguments: { query: "get-env" },
+      });
+      const discoverEnvText = (
+        discoverEnvResult.content as Array<{ type: string; text: string }>
+      )[0]!.text;
+      const discoverEnvContent = JSON.parse(discoverEnvText) as {
+        tools: Array<{ tool: { name: string } }>;
+        total: number;
+      };
+      expect(discoverEnvContent.total).toBeGreaterThan(0);
+      const getEnvToolId = discoverEnvContent.tools[0]!.tool.name;
+      expect(getEnvToolId).toContain("get-env");
+
+      const getEnvResult = await hubClient.callTool({
+        name: "invoke_tool",
+        arguments: { toolId: getEnvToolId, arguments: {} },
+      });
+      const getEnvContent = getEnvResult.content as Array<{
+        type: string;
+        text: string;
+      }>;
+      expect(getEnvContent[0]!.text).toBeDefined();
+
+      // Cleanup
+      await mcpClient.close();
+      await hubClient.close();
+    } finally {
+      await mcpEverything.stop();
+    }
   });
 
   it("should search for servers by tag using the search input", async () => {

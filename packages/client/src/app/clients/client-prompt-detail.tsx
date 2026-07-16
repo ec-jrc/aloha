@@ -26,7 +26,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { useCompletionState } from "@/hooks/useCompletionState";
+import { useCompletionState } from "@/hooks/use-completion-state";
 import JsonView from "@/mcp-inspector/JsonView";
 import { sendMCPClientRequest } from "@/services/clients";
 import { exceptionToMessage } from "@/utils/type-utils";

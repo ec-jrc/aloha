@@ -138,6 +138,7 @@ export const AgentDetailSchema = AgentWithIdSchema.and(
         })
       )
       .optional(),
+    metadata: z.record(z.string(), z.unknown()),
   })
 );
 export type AgentDetail = z.infer<typeof AgentDetailSchema>;
@@ -188,6 +189,7 @@ export const TestbedAgentWithIdAndDetailSchema = TestbedAgentWithIdSchema.and(
         name: z.string(),
         isConnected: z.boolean(),
         type: z.enum(["agent", "client", "testbedAgent"]),
+        serverProtocol: z.enum(["http", "sse", "a2a"]).optional(),
         versioningInfo: VersioningInfoSchema.optional(),
       })
     ),

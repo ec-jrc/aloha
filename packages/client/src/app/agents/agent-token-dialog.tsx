@@ -54,9 +54,9 @@ export default function AgentTokenDialog({
     setGeneratingToken(false);
   };
 
-  const copyToClipboard = () => {
+  const copyToClipboard = async () => {
     if (token) {
-      navigator.clipboard.writeText(token);
+      await navigator.clipboard.writeText(token);
       toast.success("Token copied to clipboard!");
     }
   };

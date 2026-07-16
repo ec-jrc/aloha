@@ -46,18 +46,24 @@ import { toast } from "sonner";
 
 import { PLUGIN_ID } from "./id";
 import "./plugin.css";
-import { ClientWorkflowPluginExtra, ClientWorkflowState } from "./types";
+import {
+  ClientWorkflowPluginExtra,
+  ClientWorkflowState,
+  ItemType,
+} from "./types";
 import { notifyError } from "./utils";
 
 type ClientWorkflowContext = {
   readonly: boolean;
-  clientId: string;
+  itemId: string;
+  type: ItemType;
   afterSave: () => Promise<void>;
 };
 
 function ClientStateSelector({
   readonly,
-  clientId,
+  itemId,
+  type,
   afterSave,
 }: ClientWorkflowContext) {
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -71,24 +77,24 @@ function ClientStateSelector({
     ClientWorkflowState | undefined
   >();
 
-  console.log("Client state", clientState);
+  console.log("Item state", clientState);
 
   useEffect(() => {
     async function loadState() {
-      console.log("Loading client state", clientId);
+      console.log("Loading item state", itemId);
       const result = await fetch(
-        getPluginRoute(PLUGIN_ID, `/state/${clientId}`)
+        getPluginRoute(PLUGIN_ID, `/state/${type}/${itemId}`)
       );
       if (!result.ok) {
         await notifyError(
           result,
-          `Unable to load the state for client ${clientId}`
+          `Unable to load the state for item ${itemId}`
         );
         return;
       }
 
       const extra = (await result.json()) as ClientWorkflowPluginExtra;
-      console.log("Extra for client " + clientId, extra);
+      console.log("Extra for item " + itemId, extra);
 
       if (extra.state) {
         console.log("Set extra state", extra.state);
@@ -98,14 +104,14 @@ function ClientStateSelector({
         setVerifiedLink(extra.verifiedLink ?? "");
       }
     }
-    if (clientId) {
+    if (itemId) {
       void loadState();
     }
-  }, [clientId, dialogOpen]);
+  }, [itemId, dialogOpen]);
 
   async function handleSave() {
     const result = await fetch(
-      getPluginRoute(PLUGIN_ID, `/state/${clientId}`),
+      getPluginRoute(PLUGIN_ID, `/state/${type}/${itemId}`),
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -118,7 +124,7 @@ function ClientStateSelector({
     );
 
     if (!result.ok) {
-      await notifyError(result, "Unable to save the client state");
+      await notifyError(result, "Unable to save the item state");
       return;
     }
 
@@ -127,7 +133,7 @@ function ClientStateSelector({
     void afterSave();
   }
 
-  if (!clientId) {
+  if (!itemId) {
     return null;
   }
 
@@ -139,7 +145,7 @@ function ClientStateSelector({
         </div>
         <div>
           <dt className="text-xs font-medium text-gray-500 uppercase tracking-wide">
-            Client state
+            Item state
           </dt>
           <dd className="text-sm font-medium text-gray-900">{clientState}</dd>
         </div>
@@ -157,7 +163,7 @@ function ClientStateSelector({
         </DialogTrigger>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Edit Client State</DialogTitle>
+            <DialogTitle>Edit Item State</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <Label>State</Label>
@@ -168,7 +174,7 @@ function ClientStateSelector({
               }
             >
               <SelectTrigger className="w-full">
-                <SelectValue placeholder="Select a Client state" />
+                <SelectValue placeholder="Select a item state" />
               </SelectTrigger>
               <SelectContent>
                 <SelectGroup>
@@ -233,8 +239,9 @@ export default class PluginWorkflowClientUI implements UIPluginDefinition {
             content: (
               <div className="">
                 <ClientStateSelector
+                  type={context?.type}
                   readonly={context?.readonly}
-                  clientId={context?.clientId}
+                  itemId={context?.itemId}
                   afterSave={context?.afterSave}
                 />
               </div>

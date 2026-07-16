@@ -44,6 +44,7 @@ import {
   validateRequestBody,
   verifyPermission,
 } from "./utils";
+import { RepositoryRead } from "../database/repositories/interfaces/repository-interfaces";
 
 const logger = getLogger("AGENT");
 
@@ -127,6 +128,11 @@ export function agentRoutes() {
                 };
               })
               .filter((sc) => sc !== null),
+            metadata:
+              agentInfo.serverProtocol === "a2a" &&
+              connection instanceof A2AClient
+                ? { agentCard: connection.getAgentCard() }
+                : {},
           };
           // return result as schemas.MCPServerOptions;
         },
@@ -357,10 +363,13 @@ export function agentRoutes() {
         }
 
         await verifyPermission(server.options, req, "write", true);
-
-        const connectionOption = await injector()
-          .resolve("connectionOptionsRepository")
-          .findById(cid);
+        const repos = [
+          injector().resolve("connectionOptionsRepository"),
+          injector().resolve("agentRepository"),
+        ];
+        const connectionOption = (
+          await Promise.all(repos.map((e) => e.findById(cid)))
+        ).find(Boolean);
 
         if (!connectionOption) {
           res.status(404).json({ error: "Connection not found" });

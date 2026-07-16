@@ -47,7 +47,7 @@ import { Pencil } from "lucide-react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { schemas } from "aloha-shared";
 import { useEffect, useState } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { toast } from "sonner";
 import { Switch } from "./ui/switch";
 
@@ -85,6 +85,7 @@ export default function VisibilityEditDialog({
   }, []);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setSelectedProjects(visibilityObject.projects);
   }, [visibilityObject]);
 
@@ -121,7 +122,7 @@ export default function VisibilityEditDialog({
     }
   }
 
-  const visibility = form.watch("visibility");
+  const visibility = useWatch({ control: form.control, name: "visibility" });
 
   return (
     <Dialog open={dialogOpen} onOpenChange={(open) => setDialogOpen(open)}>

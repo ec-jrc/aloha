@@ -13,7 +13,7 @@ OF ANY KIND, either express or implied. See the Licence for the specific languag
 governing permissions and limitations under the Licence.
 */
 
-import { AGENT_CARD_PATH, AgentCard } from "@a2a-js/sdk";
+import { AGENT_CARD_PATH } from "@a2a-js/sdk";
 import {
   AgentExecutor,
   DefaultRequestHandler,
@@ -27,6 +27,7 @@ import {
 } from "@a2a-js/sdk/server/express";
 import { schemas } from "aloha-shared";
 import * as express from "express";
+import { serveRegistry } from "../endpoints/servers-proxy-utils";
 import { injector } from "../injector/injector";
 import { getLogger } from "../injector/provide-logger";
 import { A2AClient } from "./a2a-client";
@@ -35,6 +36,7 @@ const logger = getLogger("A2A-SERVER");
 const mcpManager = () => injector().resolve("mcpManager");
 export class A2AServer {
   public router: express.Router = express.Router();
+  public basePathToServe!: string;
 
   constructor(public options: schemas.AgentWithId) {}
 
@@ -42,7 +44,12 @@ export class A2AServer {
     return this.options.id;
   }
 
+  registry(req: express.Request, res: express.Response) {
+    return serveRegistry(req, res, this);
+  }
+
   public serve(basePathToServe: string) {
+    this.basePathToServe = basePathToServe;
     const log = logger().child({
       id: this.options.id,
     });
@@ -88,7 +95,7 @@ export class A2AServer {
           { url: `${url}${basePathToServe}/rest`, transport: "HTTP+JSON" },
         ],
         capabilities: { ...agentCard.capabilities, pushNotifications: false },
-      } as AgentCard);
+      });
     };
 
     const userBuilder: UserBuilder =

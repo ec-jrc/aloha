@@ -89,6 +89,7 @@ export function testbedAgentRoutes() {
                     name: string;
                     isConnected: boolean;
                     type: string;
+                    serverProtocol?: string;
                     versioningInfo?: schemas.MCPConnectionOptions["versioningInfo"];
                   };
 
@@ -99,6 +100,11 @@ export function testbedAgentRoutes() {
                       name: connection.connectionOptions.name,
                       isConnected: connection.isConnected,
                       type: connection.connectionOptions.type,
+                      serverProtocol:
+                        "serverProtocol" in connection.connectionOptions
+                          ? (connection.connectionOptions as schemas.AgentWithId)
+                              .serverProtocol
+                          : undefined,
                       versioningInfo:
                         connection.connectionOptions.versioningInfo,
                     };

@@ -12,10 +12,28 @@ the Licence is distributed on an "AS IS" basis, WITHOUT WARRANTIES OR CONDITIONS
 OF ANY KIND, either express or implied. See the Licence for the specific language
 governing permissions and limitations under the Licence.
 */
-export type ClientWorkflowState = "DRAFT" | "PUBLISHED" | "VERIFIED";
+import z from "zod";
 
-export type ClientWorkflowPluginExtra = {
-  state: ClientWorkflowState;
-  publishedLink?: string;
-  verifiedLink?: string;
-};
+export const ClientWorkflowStateSchema = z.enum([
+  "DRAFT",
+  "PUBLISHED",
+  "VERIFIED",
+]);
+export type ClientWorkflowState = z.infer<typeof ClientWorkflowStateSchema>;
+
+export const ClientWorkflowPluginExtraSchema = z.object({
+  state: ClientWorkflowStateSchema,
+  publishedLink: z.string().optional(),
+  verifiedLink: z.string().optional(),
+});
+export type ClientWorkflowPluginExtra = z.infer<
+  typeof ClientWorkflowPluginExtraSchema
+>;
+
+export const ItemTypeSchema = z.enum(["client", "agent"]);
+export type ItemType = z.infer<typeof ItemTypeSchema>;
+
+export const IdAndTypeSchema = z.object({
+  id: z.string().min(1),
+  type: ItemTypeSchema,
+});

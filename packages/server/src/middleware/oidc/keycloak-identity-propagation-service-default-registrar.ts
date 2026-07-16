@@ -84,10 +84,14 @@ export class KeyCloakIdentityPropagationServiceDefaultRegistrar implements Ident
 
     const clientUUID = client.id!;
 
+    await this.removeAudienceMapper(clientId);
+
     await this.callKC(
       `/admin/realms/${this.realm}/clients/${clientUUID}`,
       "DELETE"
     );
+
+    await this.refreshAlohaTokenSet();
   }
 
   public async registerClient(
@@ -187,6 +191,10 @@ export class KeyCloakIdentityPropagationServiceDefaultRegistrar implements Ident
       undefined,
       newRoles
     );
+
+    await this.addAudienceMapper(client.client_id);
+
+    await this.refreshAlohaTokenSet();
   }
 
   init(): Promise<void> {
@@ -205,6 +213,59 @@ export class KeyCloakIdentityPropagationServiceDefaultRegistrar implements Ident
       }
       resolve();
     });
+  }
+
+  private async refreshAlohaTokenSet() {
+    const idp = await injector().resolve("oidcIdentityPropagationService");
+    if (idp) {
+      await idp.getAlohaTokenSet(true);
+    }
+  }
+
+  private async getAlohaClientUUID(): Promise<string> {
+    const alohaClient = await this.getClientByClientId("aloha");
+    if (!alohaClient) {
+      throw new Error("Aloha client not found");
+    }
+    return alohaClient.id!;
+  }
+
+  private async addAudienceMapper(clientId: string): Promise<void> {
+    const alohaUUID = await this.getAlohaClientUUID();
+    await this.callKC(
+      `/admin/realms/${this.realm}/clients/${alohaUUID}/protocol-mappers/models`,
+      "POST",
+      undefined,
+      {
+        name: `audience-${clientId}`,
+        protocol: "openid-connect",
+        protocolMapper: "oidc-audience-mapper",
+        consentRequired: false,
+        config: {
+          "included.client.audience": clientId,
+          "id.token.claim": "false",
+          "access.token.claim": "true",
+          "lightweight.claim": "false",
+          "introspection.token.claim": "true",
+        },
+      }
+    );
+  }
+
+  private async removeAudienceMapper(clientId: string): Promise<void> {
+    const alohaUUID = await this.getAlohaClientUUID();
+    const mappers = await this.callKC(
+      `/admin/realms/${this.realm}/clients/${alohaUUID}/protocol-mappers/models`,
+      "GET",
+      z.array(z.object({ id: z.string(), name: z.string() }))
+    );
+    const mapper = mappers.find((m) => m.name === `audience-${clientId}`);
+    if (mapper) {
+      await this.callKC(
+        `/admin/realms/${this.realm}/clients/${alohaUUID}/protocol-mappers/models/${mapper.id}`,
+        "DELETE"
+      );
+    }
   }
 
   private async getClientByClientId(clientId: string) {
@@ -258,10 +319,20 @@ export class KeyCloakIdentityPropagationServiceDefaultRegistrar implements Ident
       ...(body === undefined ? {} : { body: strBody! }),
     });
     if (!response.ok) {
-      console.log(body);
-      console.log(response);
+      const responseBody = await response.text();
+      logger().error(
+        { method, url: url.toString(), status: response.status, responseBody },
+        "Failed KeyCloak request"
+      );
       throw new Error(
-        `Failed KeyCloak request ` + method + " " + url.toString()
+        `Failed KeyCloak request ` +
+          method +
+          " " +
+          url.toString() +
+          " " +
+          response.status +
+          " " +
+          responseBody
       );
     }
     if (schema) {

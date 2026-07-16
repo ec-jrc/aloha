@@ -39,8 +39,13 @@ import {
 } from "aloha-shared";
 
 import { AlohaInjector } from "@aloha-injector/injector";
+import { AgentRepository } from "@aloha-repositories/agent-repository-interface";
 import { PLUGIN_ID } from "./id";
-import { ClientWorkflowPluginExtra } from "./types";
+import { ClientWorkflowPluginExtra, IdAndTypeSchema, ItemType } from "./types";
+
+type RepositoryForObjectWithExtras =
+  | ConnectionOptionsRepository
+  | AgentRepository;
 
 export default class PluginWorkflowClient implements PluginWorkflow {
   type = "workflow" as const;
@@ -66,6 +71,7 @@ export default class PluginWorkflowClient implements PluginWorkflow {
     this.logger = getLogger(this.id.toUpperCase());
 
     this.extendedAlohaInjector = alohaInjector
+      // Connection Options Repository decorators
       .provideFactory(
         "connectionOptionsRepository",
         repositoryWriteDecorate("connectionOptionsRepository", [
@@ -79,6 +85,21 @@ export default class PluginWorkflowClient implements PluginWorkflow {
           (impl: ConnectionOptionsRepository) =>
             this.decorateVisibilityInterface(impl, runtimeInjector),
         ])
+      )
+      // Agent Repository decorators
+      .provideFactory(
+        "agentRepository",
+        repositoryWriteDecorate("agentRepository", [
+          (impl: AgentRepository) =>
+            this.decorateRepositoryWrite(impl, runtimeInjector),
+        ])
+      )
+      .provideFactory(
+        "agentRepository",
+        visibilityRepositoryDecorate("agentRepository", [
+          (impl: AgentRepository) =>
+            this.decorateVisibilityInterface(impl, runtimeInjector),
+        ])
       );
 
     replaceInjector(this.extendedAlohaInjector);
@@ -88,12 +109,14 @@ export default class PluginWorkflowClient implements PluginWorkflow {
   public async getRouter() {
     const router = Router();
     router.use(json());
-    router.get("/state/:clientId", async (req, res) => {
-      const { clientId } = req.params;
-      if (!clientId) {
-        res.status(400).json({ error: "Client ID not specified" }).end();
+    router.get("/state/:type/:id", async (req, res) => {
+      const params = IdAndTypeSchema.safeParse(req.params);
+
+      if (!params.success) {
+        res.status(400).json({ error: "Invalid params" }).end();
         return;
       }
+      const { id, type } = params.data;
 
       const getUserInfo = this.runtimeInjector.resolve("getUserInfo");
       const userInfo = await getUserInfo();
@@ -108,45 +131,48 @@ export default class PluginWorkflowClient implements PluginWorkflow {
         return;
       }
 
-      if (
-        !userInfo.loggedUser.permissions.includes(
-          authentication_strategy.Permissions.ClientsRead
-        )
-      ) {
+      const permissionRead =
+        type === "client"
+          ? authentication_strategy.Permissions.ClientsRead
+          : authentication_strategy.Permissions.AgentsRead;
+
+      if (!userInfo.loggedUser.permissions.includes(permissionRead)) {
         res
           .status(403)
-          .json({ error: `User not authorized to read the client info` })
+          .json({ error: `User not authorized to read the item info` })
           .end();
         return;
       }
 
-      const connectionOptionsRepository = this.extendedAlohaInjector.resolve(
-        "connectionOptionsRepository"
-      );
-      const client = await connectionOptionsRepository.findById(clientId);
-      if (!client) {
+      const repository = this.getRepositoryByType(type);
+
+      const item = await repository.findById(id);
+      if (!item) {
         res
           .status(404)
           .json({
-            error: `Client not found`,
+            error: `Item not found`,
           })
           .end();
         return;
       }
 
-      const extra = getPluginExtraWithDefault(this, client, { state: "DRAFT" });
+      const extra = getPluginExtraWithDefault(this, item, { state: "DRAFT" });
       res.json({ ...extra }).end();
     });
 
-    router.post("/state/:clientId", async (req, res) => {
-      const { clientId } = req.params;
+    router.post("/state/:type/:id", async (req, res) => {
+      const params = IdAndTypeSchema.safeParse(req.params);
+
+      if (!params.success) {
+        res.status(400).json({ error: "Invalid params" }).end();
+        return;
+      }
+      const { id, type } = params.data;
       const body = req.body as ClientWorkflowPluginExtra;
 
-      if (!clientId || !body) {
-        res
-          .status(400)
-          .json({ error: "Client ID not specified or wrong body" })
-          .end();
+      if (!body) {
+        res.status(400).json({ error: "Wrong body" }).end();
         return;
       }
 
@@ -175,11 +201,10 @@ export default class PluginWorkflowClient implements PluginWorkflow {
         return;
       }
 
-      const connectionOptionsRepository = this.extendedAlohaInjector.resolve(
-        "connectionOptionsRepository"
-      );
-      const client = await connectionOptionsRepository.findById(clientId);
-      if (!client) {
+      const repository = this.getRepositoryByType(type);
+
+      const item = await repository.findById(id);
+      if (!item) {
         res
           .status(404)
           .json({
@@ -189,18 +214,19 @@ export default class PluginWorkflowClient implements PluginWorkflow {
         return;
       }
 
-      setPluginExtra(this, client, body);
+      setPluginExtra(this, item, body);
 
       try {
         this.logger()
-          .child({ clientId: clientId, clientExtras: client.extras })
+          .child({ id, type, extras: item.extras })
           .debug("Extras to save");
 
-        await connectionOptionsRepository.updateById(clientId, {
-          extras: client.extras,
+        await repository.updateById(id, {
+          extras: item.extras,
         });
         const mcpManager = this.extendedAlohaInjector.resolve("mcpManager");
-        await mcpManager.reloadConnection(client);
+
+        await mcpManager.reloadConnection(item);
       } catch (err) {
         const message =
           err instanceof Error ? err.message : "Failed to update client state";
@@ -214,13 +240,22 @@ export default class PluginWorkflowClient implements PluginWorkflow {
     return router;
   }
 
+  private getRepositoryByType(type: ItemType) {
+    return type === "client"
+      ? this.extendedAlohaInjector.resolve("connectionOptionsRepository")
+      : this.extendedAlohaInjector.resolve("agentRepository");
+  }
+
   private decorateVisibilityInterface(
-    impl: ConnectionOptionsRepository,
+    impl: RepositoryForObjectWithExtras,
     runtimeInjector: PluginRuntimeInjector
   ) {
     const originalCall = impl.setVisibility.bind(impl);
 
-    impl.setVisibility = async (id, visibility) => {
+    impl.setVisibility = async (
+      id: string,
+      visibility: schemas.VisibilityInterface
+    ) => {
       const userInfo = await runtimeInjector.resolve("getUserInfo")();
       const log = this.logger().child({ userInfo });
 
@@ -255,7 +290,7 @@ export default class PluginWorkflowClient implements PluginWorkflow {
   }
 
   private decorateRepositoryWrite(
-    impl: ConnectionOptionsRepository,
+    impl: RepositoryForObjectWithExtras,
     runtimeInjector: PluginRuntimeInjector
   ) {
     this.decorateCreate(impl);
@@ -263,9 +298,9 @@ export default class PluginWorkflowClient implements PluginWorkflow {
     return impl;
   }
 
-  private decorateCreate(impl: ConnectionOptionsRepository) {
+  private decorateCreate(impl: RepositoryForObjectWithExtras) {
     const originalCall = impl.create.bind(impl);
-    impl.create = async (item: schemas.MCPConnectionOptions) => {
+    impl.create = async (item: schemas.ObjectWithExtras) => {
       this.logger().child({ item }).debug("Set default state to draft");
 
       this.setDefaultPluginExtra(item);
@@ -276,7 +311,7 @@ export default class PluginWorkflowClient implements PluginWorkflow {
     };
   }
 
-  private setDefaultPluginExtra(item: Partial<schemas.MCPConnectionOptions>) {
+  private setDefaultPluginExtra(item: schemas.ObjectWithExtras) {
     const defaultExtra: ClientWorkflowPluginExtra = {
       state: "DRAFT",
     };
@@ -287,14 +322,14 @@ export default class PluginWorkflowClient implements PluginWorkflow {
   }
 
   private decorateUpdateById(
-    impl: ConnectionOptionsRepository,
+    impl: RepositoryForObjectWithExtras,
     runtimeInjector: PluginRuntimeInjector
   ) {
     const originalCall = impl.updateById.bind(impl);
 
     impl.updateById = async (
       id: string,
-      item: Partial<schemas.MCPConnectionOptions>
+      item: schemas.ObjectWithExtras
     ): Promise<boolean> => {
       const userInfo = await runtimeInjector.resolve("getUserInfo")();
 
@@ -337,9 +372,9 @@ export default class PluginWorkflowClient implements PluginWorkflow {
   }
 
   private async createItemToCheck(
-    impl: ConnectionOptionsRepository,
+    impl: RepositoryForObjectWithExtras,
     id: string,
-    item: Partial<schemas.MCPConnectionOptions> | undefined
+    item: schemas.ObjectWithExtras | undefined
   ) {
     const itemFromDb = await impl.findById(id);
 

@@ -1,8 +1,11 @@
+import { schemas } from "aloha-shared";
 import { PluginBase, PluginExtraType } from "./definitions/plugins-types";
 
-export function getPluginExtraWithDefault<
-  T extends { extras?: PluginExtraType },
->(p: PluginBase, item: T, defaultValue: PluginExtraType = {}) {
+export function getPluginExtraWithDefault<T extends schemas.ObjectWithExtras>(
+  p: PluginBase,
+  item: T,
+  defaultValue: PluginExtraType = {}
+) {
   if (!item.extras) {
     item.extras = {};
   }

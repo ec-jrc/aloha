@@ -14,9 +14,22 @@ governing permissions and limitations under the Licence.
 */
 
 import { injector } from "../injector/injector";
+import { getLogger } from "../injector/provide-logger";
+import { unknownToString } from "./type-utils";
+
+const logger = getLogger("CACHE_UTILS");
 
 export function findCachedUsersById(id: string) {
   const usersCache = injector().resolve("usersCache");
   const usersRepository = injector().resolve("userRepository");
-  return usersCache.get(id, () => usersRepository.findById(id));
+  return usersCache.get(id, async () => {
+    try {
+      return await usersRepository.findById(id);
+    } catch (err) {
+      logger()
+        .child({ id, error: unknownToString(err) })
+        .error("Error while loading user from DB");
+      return null;
+    }
+  });
 }

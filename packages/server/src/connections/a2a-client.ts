@@ -34,7 +34,7 @@ import {
 import { schemas } from "aloha-shared";
 import { getLogger } from "../injector/provide-logger";
 import { TokenSetProvider } from "../middleware/oidc/oidc-support";
-import { assertDefined } from "../utils/type-utils";
+import { assertDefined, unknownToString } from "../utils/type-utils";
 import { getAdditionalAuthenticationHeaders } from "./auth-utils";
 import { RemoteClient } from "./remote-client";
 
@@ -122,6 +122,13 @@ export class A2AClient implements RemoteClient {
   }
 
   public get isConnected(): boolean {
+    // logger()
+    //   .child({
+    //     clientId: this.connectionOptions.id,
+    //     client: this.client !== undefined,
+    //     agentCard: this.agentCard,
+    //   })
+    //   .info("isConnected");
     return this.client !== undefined && this.agentCard !== undefined;
   }
 
@@ -139,9 +146,12 @@ export class A2AClient implements RemoteClient {
     if (this.connectionOptions.disabled) {
       return;
     }
-    logger()
-      .child({ serverUrl: this.connectionOptions.serverUrl })
-      .debug("Ping A2A client");
+
+    const log = logger().child({
+      clientId: this.connectionOptions.id,
+    });
+
+    log.debug("Ping A2A client");
 
     try {
       const client = await this.connectToA2AServer();
@@ -149,7 +159,7 @@ export class A2AClient implements RemoteClient {
       this.agentCard = agentCard;
       this.client = client;
     } catch (e) {
-      logger().child({ error: e }).debug("Unable to get AgentCard");
+      log.child({ error: unknownToString(e) }).debug("Unable to get AgentCard");
       this.agentCard = undefined;
       this.client = undefined;
     }
@@ -247,7 +257,11 @@ export class A2AClient implements RemoteClient {
   ) {
     const client = await this.connectToA2AServer(tokenSetProvider);
 
-    if (this.agentCard?.capabilities.streaming) {
+    if (!this.agentCard) {
+      throw new Error(`Client Card not available`);
+    }
+
+    if (this.agentCard.capabilities.streaming) {
       logger().child({ message }).debug("Send message stream");
       const stream = client.sendMessageStream(message);
       for await (const event of stream) {
@@ -335,6 +349,12 @@ export class A2AClient implements RemoteClient {
     } else {
       clientFactory = this.clientFactory;
     }
-    return await clientFactory.createFromUrl(this.connectionOptions.serverUrl);
+
+    const agentCardUrl = new URL(
+      ".well-known/agent-card.json",
+      this.connectionOptions.serverUrl.replace(/\/?$/, "/")
+    );
+
+    return await clientFactory.createFromUrl(agentCardUrl.toString(), "");
   }
 }

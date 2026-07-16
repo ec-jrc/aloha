@@ -77,6 +77,7 @@ export function useCompletionState(
 
   const requestCompletions = useMemo(() => {
     return debounce(
+      // eslint-disable-next-line react-hooks/refs
       async (
         ref: ResourceReference | PromptReference,
         argName: string,
@@ -131,6 +132,7 @@ export function useCompletionState(
   // Clear completions when support status changes
   useEffect(() => {
     if (!completionsSupported) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       clearCompletions();
     }
   }, [completionsSupported, clearCompletions]);

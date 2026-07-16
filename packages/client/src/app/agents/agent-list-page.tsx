@@ -15,49 +15,49 @@ governing permissions and limitations under the Licence.
 
 import PageTitle from "@/components/page-title";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { useService } from "@/hooks/useService";
+import SearchBox from "@/components/search-box";
+import { useService } from "@/hooks/use-service";
 import { getAgentsList } from "@/services/agents";
 import { WithErrors } from "@/services/utils";
 import { DocumentPlusIcon } from "@heroicons/react/16/solid";
 import { endpoints_schemas } from "aloha-shared";
-import { useCallback, useState } from "react";
+import { useState } from "react";
 import { AgentCard } from "./agent-card";
 import AgentEditDialog from "./agent-edit-dialog";
 import Loading from "@/components/loading";
 
 const PING_TIMEOUT = 5000;
 
-export default function AgentsListPage() {
-  const [isLoading, agents, , forceReloadAgents] = useService<
-    (
-      | endpoints_schemas.AgentListDetail
-      | WithErrors<endpoints_schemas.AgentListDetail>
-    )[]
-  >(() => getAgentsList(), [], [], [], PING_TIMEOUT);
-  const [filter, setFilter] = useState<string>("");
+type AgentItem =
+  | endpoints_schemas.AgentListDetail
+  | WithErrors<endpoints_schemas.AgentListDetail>;
 
-  const filterAgents = useCallback(
-    (
-      a:
-        | endpoints_schemas.AgentListDetail
-        | WithErrors<endpoints_schemas.AgentListDetail>
-    ) => {
-      if (filter.length < 3) return true;
-      return filter
-        .toLowerCase()
-        .split(" ")
-        .map(
-          (f) =>
-            !("isError" in a && a.isError) &&
-            (a.name?.toLowerCase().includes(f) ||
-              !!a.description?.toLowerCase().includes(f) ||
-              !!a.tags?.some((t) => t.toLowerCase().includes(f)))
-        )
-        .some((f) => f);
-    },
-    [filter]
+const agentPredicate = (a: AgentItem, search: string) => {
+  if ("isError" in a && a.isError) return true;
+  return search
+    .toLowerCase()
+    .split(" ")
+    .some(
+      (f) =>
+        a.name?.toLowerCase().includes(f) ||
+        !!a.description?.toLowerCase().includes(f) ||
+        !!a.tags?.some((t) => t.toLowerCase().includes(f))
+    );
+};
+
+export default function AgentsListPage() {
+  const [isLoading, agents, , forceReloadAgents] = useService<AgentItem[]>(
+    () => getAgentsList(),
+    [],
+    [],
+    [],
+    PING_TIMEOUT
   );
+  const [filteredAgents, setFilteredAgents] = useState<AgentItem[] | null>(
+    null
+  );
+
+  const displayedAgents = filteredAgents ?? agents;
 
   return (
     <div className="max-w-8xl mx-auto" data-testid="agents-list-page-witness">
@@ -80,12 +80,11 @@ export default function AgentsListPage() {
         </div>
 
         {/* Search and Filter */}
-        <Input
-          type="search"
-          className="w-full bg-white border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+        <SearchBox
+          items={agents}
+          predicate={agentPredicate}
+          onFilter={setFilteredAgents}
           placeholder="Search agents by name, description, or tags..."
-          value={filter}
-          onChange={(e) => setFilter(e.target.value)}
         />
       </div>
 
@@ -93,14 +92,14 @@ export default function AgentsListPage() {
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
         {!isLoading &&
-          agents
-            .filter(filterAgents)
-            .map((agent) => <AgentCard key={agent.id} agent={agent} />)}
+          displayedAgents.map((agent) => (
+            <AgentCard key={agent.id} agent={agent} />
+          ))}
       </div>
 
       {isLoading && <Loading message="Loading agents..." />}
       {/* Empty State */}
-      {!isLoading && agents.filter(filterAgents).length === 0 && (
+      {!isLoading && displayedAgents.length === 0 && (
         <div className="text-center py-16 bg-gray-50 rounded-xl">
           <div className="inline-block p-4 bg-white rounded-full shadow-md mb-4">
             <svg
@@ -121,7 +120,7 @@ export default function AgentsListPage() {
             No agents found
           </h3>
           <p className="text-gray-500 mb-6">
-            {filter
+            {filteredAgents && filteredAgents.length === 0 && agents.length > 0
               ? "No agents match your search criteria"
               : "There are no agents available at the moment"}
           </p>

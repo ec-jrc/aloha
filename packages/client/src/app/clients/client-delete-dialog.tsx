@@ -25,7 +25,7 @@ import {
 import { Form, FormControl, FormField, FormItem } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
-import { useService } from "@/hooks/useService";
+import { useService } from "@/hooks/use-service";
 import { getServersListByConnectionId } from "@/services/servers";
 import { WithErrors } from "@/services/utils";
 import { TrashIcon } from "@heroicons/react/16/solid";
@@ -79,7 +79,7 @@ export default function MCPClientDeleteDialog({
       if (client.id) {
         await deleteConnection(client.id);
         setDeleteFormOpen(false);
-        navigate(`/clients`);
+        void navigate(`/clients`);
       }
       return null;
     } catch (e) {

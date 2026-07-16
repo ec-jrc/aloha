@@ -89,6 +89,7 @@ export function useService<T>(
 
   useEffect(() => {
     if (conditionalCallDeps.some((e) => !e)) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setLoading(false);
       return;
     }
@@ -152,7 +153,7 @@ export function useService<T>(
       if (import.meta.env.DEV) {
         setTimeout(() => internalServiceFunction(deps), 2000);
       } else {
-        internalServiceFunction(deps);
+        void internalServiceFunction(deps);
       }
     }
   }, [...deps, ...conditionalCallDeps, refreshInterval]);
@@ -161,7 +162,7 @@ export function useService<T>(
     if (refreshInterval) {
       forceFetchRef.current?.next(true);
     } else {
-      internalServiceFunction(deps);
+      void internalServiceFunction(deps);
     }
   }, [internalServiceFunction, forceFetchRef, deps]);
 

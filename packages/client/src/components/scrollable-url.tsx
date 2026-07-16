@@ -45,7 +45,7 @@ export function ScrollableUrl({ url, className = "" }: ScrollableUrlProps) {
       <div className="flex h-10 w-full rounded-md border border-input bg-background">
         <div className="flex-1 overflow-hidden">
           <div className="h-full overflow-x-hidden overflow-y-hidden px-3 py-2">
-            <code className="text-sm whitespace-nowrap text-muted-foreground leading-6">
+            <code title={url} className="text-sm whitespace-nowrap text-muted-foreground leading-6">
               {url}
             </code>
           </div>

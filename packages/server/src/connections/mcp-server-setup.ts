@@ -69,6 +69,9 @@ export async function mcpServerStartup() {
   for (const agent of agents) {
     manager.createServer(agent);
   }
+
+  logger().info("Create global hub");
+  manager.createGlobalHub();
 }
 
 export async function mcpServerShutdown() {

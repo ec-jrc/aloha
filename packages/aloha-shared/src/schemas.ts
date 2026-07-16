@@ -71,6 +71,13 @@ export const VersioningInfoSchema = z.object({
   versionGroupingUUID: z.string().min(1),
 });
 
+export type VersioningInfo = z.infer<typeof VersioningInfoSchema>;
+
+export const ObjectWithExtrasSchema = z.object({
+  extras: z.record(z.string(), z.unknown()).optional(),
+});
+export type ObjectWithExtras = z.infer<typeof ObjectWithExtrasSchema>;
+
 export const MCPBaseConnectionSchema = VisibilitySchema.merge(
   z.object({
     name: z.string().min(1, "Name is required"),
@@ -84,9 +91,8 @@ export const MCPBaseConnectionSchema = VisibilitySchema.merge(
     lastOnlineAt: z.coerce.date().optional(),
     lastOfflineAt: z.coerce.date().optional(),
     versioningInfo: VersioningInfoSchema.optional(),
-    extras: z.record(z.string(), z.unknown()).optional(),
   })
-);
+).merge(ObjectWithExtrasSchema);
 export type MCPBaseConnection = z.infer<typeof MCPBaseConnectionSchema>;
 
 export const MCPBaseConnectionWithIdSchema = WithIdBaseSchema.and(

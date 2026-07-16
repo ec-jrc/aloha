@@ -73,6 +73,7 @@ export default function MCPClientTool({ tool, clientId, disabled }: Props) {
 
   React.useEffect(() => {
     if (open) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setToolResult(null);
       // Initialize params with default values from schema
       const newParams = Object.entries(tool.inputSchema.properties ?? []).map(

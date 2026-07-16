@@ -22,12 +22,12 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
+import SearchBox from "@/components/search-box";
 import { DocumentPlusIcon } from "@heroicons/react/16/solid";
 import { schemas } from "aloha-shared";
-import { useCallback, useState } from "react";
+import { useState } from "react";
 import { useNavigate } from "react-router";
-import { useService } from "../../hooks/useService";
+import { useService } from "../../hooks/use-service";
 import { getServersList } from "../../services/servers";
 import MCPServerEditDialog from "./server-edit-dialog";
 import { WithErrors } from "@/services/utils";
@@ -37,39 +37,39 @@ import { TagsList } from "@/components/tags-list";
 
 const PING_TIMEOUT = 3000;
 
-export default function MCPServersListPage() {
-  const [isLoading, servers, , reloadServer] = useService<
-    (
-      | schemas.MCPServerOptionsWithId
-      | WithErrors<schemas.MCPServerOptionsWithId>
-    )[]
-  >(getServersList, [], [], [], PING_TIMEOUT);
+type ServerItem =
+  | schemas.MCPServerOptionsWithId
+  | WithErrors<schemas.MCPServerOptionsWithId>;
 
-  const [filter, setFilter] = useState<string>("");
+const serverPredicate = (c: ServerItem, search: string) => {
+  if ("isError" in c) return true;
+  return search
+    .toLowerCase()
+    .split(" ")
+    .some(
+      (f) =>
+        c.name.toLowerCase().includes(f) ||
+        !!c.description?.toLowerCase().includes(f) ||
+        !!c.tags?.some((t) => t.toLowerCase().includes(f))
+    );
+};
+
+export default function MCPServersListPage() {
+  const [isLoading, servers, , reloadServer] = useService<ServerItem[]>(
+    getServersList,
+    [],
+    [],
+    [],
+    PING_TIMEOUT
+  );
+
+  const [filteredServers, setFilteredServers] = useState<ServerItem[] | null>(
+    null
+  );
 
   const navigate = useNavigate();
 
-  const filterConnections = useCallback(
-    (
-      c:
-        | schemas.MCPServerOptionsWithId
-        | WithErrors<schemas.MCPServerOptionsWithId>
-    ) => {
-      if (filter.length < 3) return true;
-      if ("isError" in c) return true;
-      return filter
-        .toLowerCase()
-        .split(" ")
-        .map(
-          (f) =>
-            c.name.toLowerCase().includes(f) ||
-            !!c.description?.toLowerCase().includes(f) ||
-            !!c.tags?.some((t) => t.toLowerCase().includes(f))
-        )
-        .some((f) => f);
-    },
-    [filter]
-  );
+  const displayedServers = filteredServers ?? servers;
 
   return (
     <div className="max-w-8xl mx-auto" data-testid="server-list-page-witness">
@@ -92,19 +92,18 @@ export default function MCPServersListPage() {
         </div>
 
         {/* Search and Filter */}
-        <Input
-          type="search"
-          className="w-full bg-white border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+        <SearchBox
+          items={servers}
+          predicate={serverPredicate}
+          onFilter={setFilteredServers}
           placeholder="Search servers by name, description, or tags..."
-          value={filter}
-          onChange={(e) => setFilter(e.target.value)}
         />
       </div>
       {isLoading && <Loading message="Loading servers..."></Loading>}
       {/* Server Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
         {!isLoading &&
-          servers.filter(filterConnections).map((server) => (
+          displayedServers.map((server) => (
             <Card
               key={server.id}
               onClick={() => navigate(`/servers/${server.id}`)}
@@ -152,7 +151,7 @@ export default function MCPServersListPage() {
       </div>
 
       {/* Empty State */}
-      {!isLoading && servers.filter(filterConnections).length === 0 && (
+      {!isLoading && displayedServers.length === 0 && (
         <div className="text-center py-16 bg-gray-50 rounded-xl">
           <div className="inline-block p-4 bg-white rounded-full shadow-md mb-4">
             <svg
@@ -173,7 +172,9 @@ export default function MCPServersListPage() {
             No servers found
           </h3>
           <p className="text-gray-500 mb-6">
-            {filter
+            {filteredServers &&
+            filteredServers.length === 0 &&
+            servers.length > 0
               ? "No servers match your search criteria"
               : "There are no servers available at the moment"}
           </p>

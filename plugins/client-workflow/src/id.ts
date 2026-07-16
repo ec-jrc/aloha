@@ -13,4 +13,4 @@ OF ANY KIND, either express or implied. See the Licence for the specific languag
 governing permissions and limitations under the Licence.
 */
 
-export const PLUGIN_ID = "plugin-workflow-client" as const;
+export const PLUGIN_ID = "plugin-workflow" as const;

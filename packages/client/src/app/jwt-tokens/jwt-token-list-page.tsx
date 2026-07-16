@@ -25,7 +25,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { useService } from "@/hooks/useService";
+import { useService } from "@/hooks/use-service";
 import { DocumentPlusIcon, TrashIcon } from "@heroicons/react/16/solid";
 import { format } from "date-fns";
 import { useCallback, useState } from "react";

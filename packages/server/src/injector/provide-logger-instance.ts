@@ -17,7 +17,50 @@ import { logger as slogger } from "aloha-shared";
 import pino from "pino";
 import { Injector } from "typed-inject";
 
-const logger = pino({ level: process.env.LOG_LEVEL || "info", base: null });
+const SENSITIVE_KEYS = new Set([
+  "clientSecret",
+  "client_secret",
+  "password",
+  "secret",
+]);
+
+function redactSensitive(value: unknown): unknown {
+  if (typeof value === "string") {
+    return value
+      .replace(/:\/\/([^:]+):([^@]+)@/g, "://$1:xxxx@")
+      .replace(/eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g, "xxxx");
+  }
+  if (Array.isArray(value)) {
+    return value.map(redactSensitive);
+  }
+  if (value !== null && typeof value === "object") {
+    const result: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value)) {
+      result[k] = SENSITIVE_KEYS.has(k) ? "xxxx" : redactSensitive(v);
+    }
+    return result;
+  }
+  return value;
+}
+
+const redactingDestination: pino.DestinationStream = {
+  write(msg: string) {
+    try {
+      const redacted = JSON.stringify(redactSensitive(JSON.parse(msg)));
+      process.stdout.write(redacted + "\n");
+    } catch {
+      process.stdout.write(msg);
+    }
+  },
+};
+
+const logger =
+  process.env.SHOW_SENSITIVE_DATA === "true"
+    ? pino({ level: process.env.LOG_LEVEL || "info", base: null })
+    : pino(
+        { level: process.env.LOG_LEVEL || "info", base: null },
+        redactingDestination
+      );
 
 export function provideLogger<T>(injector: Injector<T>) {
   const l: slogger.Logger = logger;

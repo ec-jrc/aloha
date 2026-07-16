@@ -38,7 +38,7 @@ export default function ChangelogPage() {
       }
     }
 
-    fetchChangelog();
+    void fetchChangelog();
   }, [location]);
 
   if (loading) {

@@ -19,7 +19,15 @@ import {
   MCPToolFilterCallable,
   MCPToolFilterStatic,
 } from "@openai/agents";
-import { getAgentDetail } from "./agents";
+import {
+  MessageSendParams,
+  Task,
+  TaskArtifactUpdateEvent,
+  TaskStatusUpdateEvent,
+  Message,
+} from "@a2a-js/sdk";
+import { endpoints_schemas } from "aloha-shared";
+import { getAgentDetail, sendA2AMessageStream } from "./agents";
 import { getConnectionDetail, sendMCPClientRequest } from "./clients";
 import {
   AgentInstance,
@@ -29,6 +37,7 @@ import {
   sendMessageToAgentInstance,
 } from "./testbed-agents";
 import { isWithErrorsObject } from "./utils";
+import { isTextPart } from "@/utils/a2a-utils";
 
 type MCPTools = Awaited<ReturnType<MCPServer["listTools"]>>;
 
@@ -125,6 +134,224 @@ export class AlohaTestbedAgentMCPServer implements MCPServer {
         text: finalMessage,
       },
     ];
+  }
+}
+
+export class AlohaA2AAgentMCPServer implements MCPServer {
+  name: string;
+  cacheToolsList: boolean;
+  toolFilter?: MCPToolFilterCallable | MCPToolFilterStatic | undefined;
+  private agentDetail: endpoints_schemas.AgentDetail | null = null;
+
+  constructor(
+    private id: string,
+    name: string
+  ) {
+    this.name = "AlohaA2AAgent:" + (name || id).trim();
+    this.cacheToolsList = false;
+  }
+
+  invalidateToolsCache(): Promise<void> {
+    return Promise.resolve();
+  }
+
+  async connect(): Promise<void> {
+    const detail = await getAgentDetail(this.id);
+    if (isWithErrorsObject(detail)) {
+      throw new Error(`Invalid A2A Agent with id ${this.id}`);
+    }
+    this.agentDetail = detail;
+  }
+
+  async close(): Promise<void> {
+    this.agentDetail = null;
+  }
+
+  async listTools(): Promise<MCPTools> {
+    if (!this.agentDetail) {
+      throw new Error("Agent not connected. Call connect() first.");
+    }
+
+    const agentCard = this.agentDetail.metadata?.agentCard as
+      | {
+          description?: string;
+          skills?: { name: string; description: string; examples?: string[] }[];
+        }
+      | undefined;
+
+    const description =
+      agentCard?.description || this.agentDetail.name || "A2A remote agent";
+
+    const skillsDescription =
+      agentCard?.skills
+        ?.map((s) => {
+          let skillNameAndDesc = `- ${s.name}: ${s.description}`;
+          if (s.examples) {
+            skillNameAndDesc += "\n  Examples:\n";
+            skillNameAndDesc += s.examples.map((e) => "     + " + e).join("\n");
+          }
+          return skillNameAndDesc;
+        })
+        .join("\n") || "";
+
+    const fullDescription = skillsDescription
+      ? `${description}\n\nAvailable skills:\n${skillsDescription}`
+      : description;
+
+    return [
+      {
+        name: this.name,
+        description: fullDescription,
+        inputSchema: {
+          type: "object",
+          required: ["query"],
+          additionalProperties: false,
+          properties: {
+            query: {
+              type: "string",
+              description: "The message/query to send to the remote A2A agent",
+            },
+          },
+        },
+      },
+    ];
+  }
+
+  async callTool(
+    _toolName: string,
+    args: Record<string, unknown> | null
+  ): Promise<MCPCallToolContent> {
+    if (!this.agentDetail) {
+      throw new Error("Agent not connected. Call connect() first.");
+    }
+
+    if (!args || typeof args["query"] !== "string") {
+      throw new Error("query parameter is mandatory and must be a string");
+    }
+
+    const query = args["query"] as string;
+
+    console.info(`Calling A2A agent ${this.name} with message: ${query}`);
+
+    const message: MessageSendParams = {
+      message: {
+        kind: "message",
+        messageId: crypto.randomUUID(),
+        role: "user",
+        parts: [{ kind: "text", text: query }],
+      },
+    };
+
+    const responseText = await this.collectA2AResponse(message);
+
+    return responseText
+      ? [{ type: "text", text: responseText }]
+      : [{ type: "text", text: "A2A agent returned no response" }];
+  }
+
+  private async collectA2AResponse(
+    message: MessageSendParams
+  ): Promise<string> {
+    let responseText = "";
+    let error: string | null = null;
+
+    await new Promise<void>((resolve) => {
+      void sendA2AMessageStream(this.agentDetail!, message, async (event) => {
+        if (!("kind" in event)) {
+          resolve();
+          return;
+        }
+
+        switch (event.kind) {
+          case "task": {
+            const task = event as Task;
+            if (task.status?.message?.parts) {
+              responseText += task.status.message.parts
+                .filter(isTextPart)
+                .map((p) => p.text)
+                .join("");
+            }
+            if (task.artifacts) {
+              for (const artifact of task.artifacts) {
+                responseText += artifact.parts
+                  .filter(isTextPart)
+                  .map((p) => p.text)
+                  .join("");
+              }
+            }
+            if (this.isTerminalState(task.status?.state)) {
+              if (task.status?.state === "failed") {
+                error = "A2A agent task failed";
+              }
+              resolve();
+            }
+            break;
+          }
+          case "status-update": {
+            const statusUpdate = event as TaskStatusUpdateEvent;
+            if (statusUpdate.status?.message?.parts) {
+              responseText += statusUpdate.status.message.parts
+                .filter(isTextPart)
+                .map((p) => p.text)
+                .join("");
+            }
+            if (this.isTerminalState(statusUpdate.status?.state)) {
+              if (statusUpdate.status?.state === "failed") {
+                error = "A2A agent task failed";
+              }
+              resolve();
+            }
+            break;
+          }
+          case "artifact-update": {
+            const artifactUpdate = event as TaskArtifactUpdateEvent;
+            responseText += artifactUpdate.artifact.parts
+              .filter(isTextPart)
+              .map((p) => p.text)
+              .join("");
+            break;
+          }
+          case "message": {
+            const msg = event as Message;
+            if (msg.role === "agent" && msg.parts) {
+              responseText += msg.parts
+                .filter(isTextPart)
+                .map((p) => p.text)
+                .join("");
+            }
+            break;
+          }
+          case "error": {
+            const errorEvent = event as { kind: "error"; data: unknown };
+            error =
+              typeof errorEvent.data === "string"
+                ? errorEvent.data
+                : "A2A communication error";
+            resolve();
+            break;
+          }
+          case "closed": {
+            resolve();
+            break;
+          }
+        }
+      });
+    });
+
+    if (error && !responseText) {
+      return `Error: ${error}`;
+    }
+
+    return responseText;
+  }
+
+  private isTerminalState(state: string | undefined): boolean {
+    return (
+      state === "completed" ||
+      state === "failed" ||
+      state === "canceled" ||
+      state === "rejected"
+    );
   }
 }
 

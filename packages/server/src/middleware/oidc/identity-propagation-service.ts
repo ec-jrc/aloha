@@ -36,5 +36,5 @@ export interface IdentityPropagationService {
   getInfo(): Promise<IdentityPropagationServiceInfo>;
   tokenExchange(tokenSet: TokenSet, audience: string): Promise<TokenSet>;
   getUsername(tokenSet: TokenSet): Promise<string>;
-  getAlohaTokenSet(): Promise<TokenSet>;
+  getAlohaTokenSet(forceRefresh?: boolean): Promise<TokenSet>;
 }

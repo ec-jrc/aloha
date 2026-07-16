@@ -55,10 +55,6 @@ export class KeycloakIdentityPropagationService implements IdentityPropagationSe
   }
 
   async tokenExchange(tokenSet: TokenSet, audience: string): Promise<TokenSet> {
-    // {
-    //   const decodeJwt = jose.decodeJwt(tokenSet.access_token);
-    //   console.log(decodeJwt, audience);
-    // }
     const tokenResponse = await openIdClient.genericGrantRequest(
       this.oidcConfiguration,
       "urn:ietf:params:oauth:grant-type:token-exchange",
@@ -82,8 +78,8 @@ export class KeycloakIdentityPropagationService implements IdentityPropagationSe
     return userInfo.preferred_username!;
   }
 
-  async getAlohaTokenSet(): Promise<TokenSet> {
-    if (!this.alohaTokenSet) {
+  async getAlohaTokenSet(forceRefresh: boolean = false): Promise<TokenSet> {
+    if (!this.alohaTokenSet || forceRefresh) {
       this.alohaTokenSet = await this.getCredentialGrantTokenSet();
       return this.alohaTokenSet;
     }
@@ -94,7 +90,7 @@ export class KeycloakIdentityPropagationService implements IdentityPropagationSe
 
     const tokenExpiryTime = accessTokenDecoded.exp || now + 1;
 
-    if (tokenExpiryTime < now) {
+    if (tokenExpiryTime < now || forceRefresh) {
       this.alohaTokenSet = await this.refreshTokenSet(this.alohaTokenSet);
     }
 

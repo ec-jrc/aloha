@@ -16,7 +16,7 @@ governing permissions and limitations under the Licence.
 import ConfirmDialog from "@/components/confirm-dialog";
 import PageTitle from "@/components/page-title";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import SearchBox from "@/components/search-box";
 import {
   Table,
   TableBody,
@@ -26,11 +26,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { useService } from "@/hooks/useService";
-import {
-  DocumentPlusIcon,
-  TrashIcon,
-} from "@heroicons/react/16/solid";
+import { useService } from "@/hooks/use-service";
+import { DocumentPlusIcon, TrashIcon } from "@heroicons/react/16/solid";
 import { Pencil } from "lucide-react";
 import { authentication_strategy, schemas } from "aloha-shared";
 import { useCallback, useMemo, useState } from "react";
@@ -40,11 +37,99 @@ import ProjectForm from "./project-form";
 import { usePermissionChecker } from "@/hooks/use-permission-checker";
 import { TagsList } from "@/components/tags-list";
 
-const ROWS_PER_PAGE = 25;
+const projectPredicate = (p: schemas.ProjectWithId, search: string) => {
+  return search
+    .toLowerCase()
+    .split(" ")
+    .some(
+      (f) =>
+        p.name.toLowerCase().includes(f) ||
+        p.projectId.toLowerCase().includes(f) ||
+        (p.tags && p.tags.some((t) => t.toLowerCase().includes(f)))
+    );
+};
+
+function DeleteButton({
+  projectId,
+  canManageProjects,
+  onDeleted,
+}: {
+  projectId: string;
+  canManageProjects: boolean;
+  onDeleted: () => void;
+}) {
+  return (
+    <ConfirmDialog
+      onClick={async () => {
+        try {
+          await deleteProject(projectId);
+          onDeleted();
+        } catch (error) {
+          console.error(error);
+          toast.error("There was an error while deleting the project");
+        }
+      }}
+    >
+      <Button
+        variant="destructive"
+        size="icon"
+        disabled={!canManageProjects}
+        data-testid="delete-project-button-witness"
+      >
+        <TrashIcon />
+      </Button>
+    </ConfirmDialog>
+  );
+}
+
+function EditButton({
+  projectId,
+  canManageProjects,
+  onEdited,
+}: {
+  projectId: string;
+  canManageProjects: boolean;
+  onEdited: () => Promise<void>;
+}) {
+  return (
+    <ProjectForm projectId={projectId} onAccept={onEdited}>
+      <Button
+        size="icon"
+        className="mr-2"
+        variant="default"
+        disabled={!canManageProjects}
+        data-testid="edit-project-button-witness"
+      >
+        <Pencil />
+      </Button>
+    </ProjectForm>
+  );
+}
+
+function NewButton({
+  canManageProjects,
+  onCreated,
+}: {
+  canManageProjects: boolean;
+  onCreated: () => Promise<void>;
+}) {
+  return (
+    <ProjectForm projectId={undefined} onAccept={onCreated}>
+      <Button
+        variant="default"
+        disabled={!canManageProjects}
+        data-testid="new-project-button-witness"
+      >
+        <DocumentPlusIcon /> New Project
+      </Button>
+    </ProjectForm>
+  );
+}
 
 export default function ProjectsListPage() {
-  const [filter, setFilter] = useState<string>("");
-  const [page, setPage] = useState<number>(1);
+  const [filteredProjects, setFilteredProjects] = useState<
+    schemas.ProjectWithId[] | null
+  >(null);
   const [requestRefresh, setRequestRefresh] = useState(0);
 
   const [isLoading, projects] = useService(
@@ -61,93 +146,12 @@ export default function ProjectsListPage() {
     );
   }, [permissionChecker]);
 
-  const filterProjects = useCallback(
-    (p: schemas.Project) => {
-      if (filter.length < 3) return true;
-      return filter
-        .toLowerCase()
-        .split(" ")
-        .map(
-          (f) =>
-            p.name.toLowerCase().includes(f) ||
-            p.projectId.toLowerCase().includes(f) ||
-            (p.tags && p.tags.some((t) => t.toLowerCase().includes(f)))
-        )
-        .some((f) => f);
-    },
-    [filter]
-  );
+  const refreshList = useCallback(() => {
+    setRequestRefresh((r) => r + 1);
+  }, []);
 
-  const handleChangePage = (
-    _event: React.MouseEvent<HTMLButtonElement>,
-    newPage: number
-  ) => {
-    setPage(newPage);
-  };
+  const displayedProjects = filteredProjects ?? projects;
 
-  const DeleteButton = ({ projectId }: { projectId: string }) => {
-    return (
-      <ConfirmDialog
-        onClick={async () => {
-          try {
-            await deleteProject(projectId);
-            setRequestRefresh(requestRefresh + 1);
-          } catch (error) {
-            console.error(error);
-            toast.error("There was an error while deleting the project");
-          }
-        }}
-      >
-        <Button
-          variant="destructive"
-          size="icon"
-          disabled={!canManageProjects}
-          data-testid="delete-project-button-witness"
-        >
-          <TrashIcon />
-        </Button>
-      </ConfirmDialog>
-    );
-  };
-
-  const EditButton = ({ projectId }: { projectId: string }) => {
-    return (
-      <ProjectForm
-        projectId={projectId}
-        onAccept={async () => {
-          setRequestRefresh(requestRefresh + 1);
-        }}
-      >
-        <Button
-          size="icon"
-          className="mr-2"
-          variant="default"
-          disabled={!canManageProjects}
-          data-testid="edit-project-button-witness"
-        >
-          <Pencil />
-        </Button>
-      </ProjectForm>
-    );
-  };
-  const NewButton = () => {
-    return (
-      <ProjectForm
-        projectId={undefined}
-        onAccept={async () => {
-          setRequestRefresh(requestRefresh + 1);
-        }}
-      >
-        <Button
-          variant="default"
-          disabled={!canManageProjects}
-          data-testid="new-project-button-witness"
-        >
-          <DocumentPlusIcon /> New Project
-        </Button>
-      </ProjectForm>
-    );
-  };
   return (
     <div className="max-w-8xl mx-auto" data-testid="project-list-page-witness">
       {/* Page Header */}
@@ -156,16 +160,18 @@ export default function ProjectsListPage() {
           <PageTitle className="text-2xl font-bold text-gray-900">
             Projects
           </PageTitle>
-          <NewButton />
+          <NewButton
+            canManageProjects={canManageProjects}
+            onCreated={async () => refreshList()}
+          />
         </div>
 
         {/* Search and Filter */}
-        <Input
-          type="search"
-          className="w-full bg-white border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-          placeholder="Search projects"
-          value={filter}
-          onChange={(e) => setFilter(e.target.value)}
+        <SearchBox
+          items={projects}
+          predicate={projectPredicate}
+          onFilter={setFilteredProjects}
+          placeholder="Search projects..."
         />
       </div>
 
@@ -189,10 +195,8 @@ export default function ProjectsListPage() {
                 </TableCell>
               </TableRow>
             )}
-            {projects
-              .filter(filterProjects)
-              .slice((page - 1) * ROWS_PER_PAGE, page * ROWS_PER_PAGE)
-              .map((project) => (
+            {projects.length > 0 &&
+              displayedProjects.map((project) => (
                 <TableRow key={project.id}>
                   <TableCell
                     className="text-left w-1/12"
@@ -210,33 +214,22 @@ export default function ProjectsListPage() {
                     <TagsList item={project} inline={true} />
                   </TableCell>
                   <TableCell className="text-center w-1/6">
-                    <EditButton projectId={project.id} />
-                    <DeleteButton projectId={project.id} />
+                    <EditButton
+                      projectId={project.id}
+                      canManageProjects={canManageProjects}
+                      onEdited={async () => refreshList()}
+                    />
+                    <DeleteButton
+                      projectId={project.id}
+                      canManageProjects={canManageProjects}
+                      onDeleted={refreshList}
+                    />
                   </TableCell>
                 </TableRow>
               ))}
           </TableBody>
         </Table>
       </div>
-      {projects.filter(filterProjects).length > ROWS_PER_PAGE && (
-        <div className="flex justify-center mt-4">
-          <Button
-            onClick={(event) => handleChangePage(event, page - 1)}
-            disabled={page === 1}
-            className="mr-2"
-          >
-            Previous
-          </Button>
-          <Button
-            onClick={(event) => handleChangePage(event, page + 1)}
-            disabled={
-              page * ROWS_PER_PAGE >= projects.filter(filterProjects).length
-            }
-          >
-            Next
-          </Button>
-        </div>
-      )}
     </div>
   );
 }

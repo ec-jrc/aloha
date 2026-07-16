@@ -35,7 +35,11 @@ import MCPClient from "../connections/mcp-client";
 import { authorise } from "../middleware/authorise";
 import { buildTokenSetProviderFromRequest } from "../middleware/oidc/oidc-support";
 import { findCachedUsersById } from "../utils/cache.utils";
-import { stringComparer } from "../utils/sort-comparators";
+import {
+  compositeComparer,
+  stringComparer,
+  versionNumberComparer,
+} from "../utils/sort-comparators";
 import { assertFieldInObject, unknownToString } from "../utils/type-utils";
 import {
   crudGenerator,
@@ -82,7 +86,9 @@ export function clientsRoutes() {
             )
           ).filter((s) => s !== null);
 
-          permitted.sort(stringComparer("name"));
+          permitted.sort(
+            compositeComparer(stringComparer("name"), versionNumberComparer)
+          );
 
           const detailedServers: endpoints_schemas.MCPConnectionStatus[] =
             permitted.map(({ id, ...server }) => {
@@ -377,6 +383,7 @@ export function clientsRoutes() {
         await identityPropagationServiceRegistrar.unregisterClient(
           client.authentication.clientId
         );
+        await mcpManager().reloadConnection(client);
         res.status(204).end();
       } catch (error) {
         logger().child({ error }).error("Failed to unregister client");
@@ -430,7 +437,8 @@ export function clientsRoutes() {
         });
         res.status(204).end();
       } catch (error) {
-        logger().child({ error }).error("Failed to register client");
+        const errMsg = error instanceof Error ? error.message : String(error);
+        logger().error({ errMsg }, "Failed to register client");
         res.status(500).json({ error: "Failed to register client" });
       }
     }

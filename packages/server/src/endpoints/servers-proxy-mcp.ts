@@ -38,6 +38,59 @@ export function serverProxyRoutes() {
     getUserWithIdFromRepository
   );
 
+  router.use(
+    "/hub",
+    optionalOIDCMiddleware,
+    authorise([authentication_strategy.Permissions.ProxyApiAccess]),
+    async (req, res, next) => {
+      const server = await getServer("hub", req, res, MCPServer);
+      if (server !== undefined && server.router !== undefined) {
+        try {
+          const method = req.method;
+          if (method === "POST") {
+            await server.router.httpPostRequest(req, res, next);
+          } else if (method === "GET") {
+            await server.router.httpGetRequest(req, res, next);
+          } else if (method === "DELETE") {
+            await server.router.httpDeleteRequest(req, res, next);
+          }
+        } catch (e) {
+          const log = logger();
+          log.error(e);
+          res.writeHead(405).end(
+            JSON.stringify({
+              jsonrpc: "2.0",
+              error: {
+                code: -1099,
+                message: "Failed to connect to MCP server",
+              },
+              id: null,
+            })
+          );
+        }
+      }
+    }
+  );
+
+  router.get(
+    "/:path/registry/v1",
+    optionalOIDCMiddleware,
+    authorise([authentication_strategy.Permissions.ProxyApiAccess]),
+    async (req, res) => {
+      const server = await getServer(undefined, req, res, MCPServer);
+      if (server) {
+        return server.registry(req, res);
+      } else {
+        logger()
+          .child({ path: req.params.path })
+          .error("Unable to find MCP server");
+        return res.status(404).json({
+          error: "Unable to find the MCP server",
+        });
+      }
+    }
+  );
+
   // SSE Route
   router.get(
     "/:path/sse",
@@ -102,7 +155,6 @@ export function serverProxyRoutes() {
 
   router.get(
     "/:path/info",
-
     optionalOIDCMiddleware,
     authorise([authentication_strategy.Permissions.ProxyApiAccess]),
     async (req, res) => {

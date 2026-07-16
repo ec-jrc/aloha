@@ -20,8 +20,9 @@ import {
 import { ChatInput } from "@/components/chat/chat-input";
 import { ChatMessageList } from "@/components/chat/chat-message-list";
 import ConfirmDialog from "@/components/confirm-dialog";
-import ConnectionTypeIndicator from "@/components/connection-type-indicator";
+import ConnectionAssociationList from "@/components/connection-association-list";
 import { CreatorAndVisibilityEditor } from "@/components/creator-and-visibility-editor";
+import { OIDCRegistration } from "@/components/oidc-registration";
 import PageTitle from "@/components/page-title";
 import { ScrollableUrl } from "@/components/scrollable-url";
 import { TagsList } from "@/components/tags-list";
@@ -34,10 +35,13 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
+import { Switch } from "@/components/ui/switch";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { usePermissionChecker } from "@/hooks/use-permission-checker";
-import { useService } from "@/hooks/useService";
-// import JsonView from "@/mcp-inspector/JsonView";
-import { OIDCRegistration } from "@/components/oidc-registration";
+import { usePlatformPluginsForSlotId } from "@/hooks/use-platform-plugins";
+import { useService } from "@/hooks/use-service";
+import JsonView from "@/mcp-inspector/JsonView";
+import { UISlot } from "@/plugins/definitions/ui-slot";
 import { getAllGenericConnections } from "@/services/testbed-agents";
 import { isWithErrorsObject } from "@/services/utils";
 import {
@@ -48,14 +52,9 @@ import {
 import { isA2AAgent } from "@/utils/a2a-utils";
 import { exceptionToMessage, isDefined } from "@/utils/type-utils";
 import { MessageSendParams } from "@a2a-js/sdk";
-import {
-  ExclamationTriangleIcon,
-  MinusCircleIcon,
-  PlusCircleIcon,
-  TrashIcon,
-} from "@heroicons/react/16/solid";
+import { ExclamationTriangleIcon, TrashIcon } from "@heroicons/react/16/solid";
 import { PaperAirplaneIcon, StopIcon } from "@heroicons/react/24/solid";
-import { schemas } from "aloha-shared";
+import { authentication_strategy, schemas } from "aloha-shared";
 import { Pencil } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router";
@@ -109,6 +108,7 @@ export default function AgentDetailPage() {
   const [input, setInput] = useState<string>("");
   const [isGenerating, setIsGenerating] = useState(false);
   const [events, setEvents] = useState<RawEventWithType[]>([]);
+  const [showConnectionSection, setShowConnectionSection] = useState(false);
   const [isAgentLoading, agentDetail, , refreshAgent] = useService(
     (id) => getAgentDetail(id),
     [id],
@@ -125,15 +125,13 @@ export default function AgentDetailPage() {
     PING_TIMEOUT
   );
 
-  const [draggingOver, setDraggingOver] = useState(0);
-
   const navigate = useNavigate();
 
   const permissionChecker = usePermissionChecker();
 
-  const isTheUserTheOwner = useMemo(() => {
-    return permissionChecker.hasOwnership(agentDetail);
-  }, [agentDetail, permissionChecker]);
+  const canOperateOnItem =
+    permissionChecker.isAdministrator() ||
+    permissionChecker.hasOwnership(agentDetail);
 
   const isA2A = useMemo(
     () => isDefined(agentDetail) && isA2AAgent(agentDetail),
@@ -156,6 +154,18 @@ export default function AgentDetailPage() {
       : `${window.location.origin}/api/a2a/${agentDetail.serverPath}`;
   }, [isA2A, agentDetail]);
 
+  const registryUrl = useMemo(() => {
+    if (!isDefined(agentDetail)) {
+      return "";
+    }
+
+    return (
+      (!isA2A
+        ? `${window.location.origin}/api/mcp/${agentDetail.serverPath}`
+        : `${window.location.origin}/api/a2a/${agentDetail.serverPath}`) +
+      "/registry/v1"
+    );
+  }, [isA2A, agentDetail]);
   const isClientCallable = useMemo(() => {
     return (
       !isWithErrorsObject(agentDetail) &&
@@ -165,7 +175,7 @@ export default function AgentDetailPage() {
 
   const associateClient = useCallback(
     async (clientId: string) => {
-      if (!isTheUserTheOwner) {
+      if (!canOperateOnItem) {
         return;
       }
 
@@ -179,12 +189,12 @@ export default function AgentDetailPage() {
         }
       }
     },
-    [id, refreshAgent, isTheUserTheOwner]
+    [id, refreshAgent, canOperateOnItem]
   );
 
   const dissociateClient = useCallback(
     async (clientId: string) => {
-      if (!isTheUserTheOwner) {
+      if (!canOperateOnItem) {
         return;
       }
 
@@ -198,7 +208,7 @@ export default function AgentDetailPage() {
         }
       }
     },
-    [id, refreshAgent, isTheUserTheOwner]
+    [id, refreshAgent, canOperateOnItem]
   );
 
   const updateEvents = useCallback(
@@ -206,6 +216,28 @@ export default function AgentDetailPage() {
       setEvents((prev) => [...prev, { ...event, type: eventType }]);
     },
     []
+  );
+
+  const canTheUserOperateOnWorkflow = useMemo(
+    () =>
+      permissionChecker.has(
+        authentication_strategy.Permissions.ManageWorkflows
+      ),
+    [permissionChecker]
+  );
+
+  const clientWorkflowPlugins = usePlatformPluginsForSlotId(
+    "client-workflow-slot"
+  );
+
+  const workflowSlotContext = useMemo(
+    () => ({
+      readonly: !canTheUserOperateOnWorkflow,
+      itemId: id,
+      type: "agent",
+      afterSave: async () => refreshAgent(),
+    }),
+    [id, refreshAgent, canTheUserOperateOnWorkflow]
   );
 
   const handleSubmitStream = useCallback(
@@ -242,6 +274,15 @@ export default function AgentDetailPage() {
                 case "artifact-update":
                   updateEvents(event, "agent_message");
                   break;
+                case "error":
+                  updateEvents(
+                    event as unknown as RawA2AEvent,
+                    "error_message"
+                  );
+                  setTaskId(null);
+                  setInput("");
+                  setIsGenerating(false);
+                  break;
                 default:
                   setTaskId(null);
                   setInput("");
@@ -251,7 +292,11 @@ export default function AgentDetailPage() {
           );
         } catch (err) {
           console.error(err);
-          toast.error("Failed to send message to agent");
+          updateEvents(
+            { kind: "error", data: String(err) } as unknown as RawA2AEvent,
+            "error_message"
+          );
+          setIsGenerating(false);
         }
       }
     },
@@ -267,7 +312,7 @@ export default function AgentDetailPage() {
 
   const stopAgentInstanceGeneration = useCallback(() => {
     if (isDefined(agentDetail) && !isWithErrorsObject(agentDetail) && taskId) {
-      cancelA2AStream(agentDetail, taskId);
+      void cancelA2AStream(agentDetail, taskId);
     }
     setIsGenerating(false);
   }, [agentDetail, taskId]);
@@ -286,7 +331,7 @@ export default function AgentDetailPage() {
     async (e: React.FormEvent<HTMLFormElement>) => {
       e.preventDefault();
       setIsGenerating(true);
-      handleSubmit(input);
+      void handleSubmit(input);
     },
     [handleSubmit, input]
   );
@@ -297,7 +342,7 @@ export default function AgentDetailPage() {
         e.preventDefault();
         if (isGenerating || !input) return;
         setIsGenerating(true);
-        handleSubmit(input);
+        void handleSubmit(input);
       }
     },
     [isGenerating, input, handleSubmit]
@@ -331,7 +376,7 @@ export default function AgentDetailPage() {
   async function doDeleteAgent() {
     try {
       await deleteAgent(id!);
-      navigate(`/agents`);
+      void navigate(`/agents`);
     } catch (e) {
       console.error(e);
       toast.error(exceptionToMessage(e));
@@ -359,19 +404,19 @@ export default function AgentDetailPage() {
               </p>
             )}
           </div>
-          <div className="flex flex-shrink-0 gap-2 sm:ml-8 self-start">
+          <div className="flex shrink-0 gap-2 sm:ml-8 self-start">
             <ConfirmDialog
               onClick={() => {
                 return doDeleteAgent();
               }}
             >
-              <Button variant="destructive" disabled={!isTheUserTheOwner}>
+              <Button variant="destructive" disabled={!canOperateOnItem}>
                 <TrashIcon />
                 Delete Agent
               </Button>
             </ConfirmDialog>
             <EditDialog
-              disabled={!isTheUserTheOwner}
+              disabled={!canOperateOnItem}
               id={id}
               refreshAgent={refreshAgent}
             ></EditDialog>
@@ -435,6 +480,28 @@ export default function AgentDetailPage() {
                 />
               )}
             </div>
+
+            {agentDetail.id !== undefined &&
+              canOperateOnItem &&
+              clientWorkflowPlugins.length > 0 && (
+                <div className="space-y-4 mt-6">
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-sm font-semibold text-gray-900 uppercase tracking-wide">
+                      Agent Workflow
+                    </h3>
+                  </div>
+
+                  <div className="space-y-4">
+                    <UISlot
+                      context={workflowSlotContext}
+                      slotId="client-workflow-slot"
+                      renderWidget={(w) => {
+                        return <div key={w.id}>{w.content}</div>;
+                      }}
+                    ></UISlot>
+                  </div>
+                </div>
+              )}
           </div>
 
           <div className="lg:w-2/3 mt-8 lg:mt-0">
@@ -484,83 +551,122 @@ export default function AgentDetailPage() {
                 </div>
               </div>
             ) : isA2A && agentDetail.isConnected && !agentDetail.disabled ? (
-              <>
-                <Card className="bg-white shadow-lg rounded-xl border border-gray-100 hover:shadow-xl flex flex-col h-full">
-                  <CardHeader className="pb-3">
-                    <div className="flex items-center gap-2">
-                      <CardTitle className="text-base font-semibold text-gray-900">
-                        Send Message to Agent
-                      </CardTitle>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="flex-grow text-sm text-gray-600 pb-3">
-                    <ChatMessageList className="!h-[20em]">
-                      {transformA2AEvents(events).map((displayEvent) => {
-                        const variant =
-                          displayEvent.type === "user_message"
-                            ? "sent"
-                            : "received";
-                        return (
-                          <ChatBubble
-                            key={displayEvent.id}
-                            variant={variant}
-                            className="max-w-full"
-                          >
-                            <ChatBubbleAvatar
-                              fallback={
-                                displayEvent.type === "user_message"
-                                  ? "👨🏽"
-                                  : displayEvent.type === "error"
-                                    ? "💀"
-                                    : "🤖"
-                              }
-                            />
-                            <ChatBubbleMessage variant={variant}>
-                              <A2AEvent event={displayEvent} />
-                            </ChatBubbleMessage>
-                          </ChatBubble>
-                        );
-                      })}
-                    </ChatMessageList>
-                  </CardContent>
-                  <CardFooter>
-                    <form
-                      className="flex relative gap-0 w-full"
-                      onSubmit={onSubmit}
+              <Tabs defaultValue="chat" className="w-full">
+                <TabsList className="flex w-full md:grid md:grid-cols-2 gap-1 bg-gray-200 rounded-lg h-11 px-2 overflow-x-auto md:overflow-visible">
+                  <TabsTrigger
+                    value="chat"
+                    className="data-[state=active]:bg-gray-50 h-8 duration-0 flex-shrink-0 md:flex-shrink"
+                  >
+                    Chat
+                  </TabsTrigger>
+                  {!!agentDetail.metadata?.agentCard && (
+                    <TabsTrigger
+                      value="agent-card"
+                      className="data-[state=active]:bg-gray-50 h-8 duration-0 flex-shrink-0 md:flex-shrink"
                     >
-                      <ChatInput
-                        value={input}
-                        onChange={(e) => {
-                          setInput(e.target.value);
-                        }}
-                        onKeyDown={onKeyDown}
-                        className="min-h-12 bg-background shadow-none "
-                        disabled={isGenerating}
-                      />
-                      {!isGenerating ? (
-                        <Button
-                          className="absolute top-1/2 right-2 transform  -translate-y-1/2"
-                          type="submit"
-                          size="icon"
-                          disabled={!input}
-                        >
-                          <PaperAirplaneIcon />
-                        </Button>
-                      ) : (
-                        <Button
-                          onClick={stopGeneration}
-                          className="absolute top-1/2 right-2 transform  -translate-y-1/2"
-                          type="button"
-                          size="icon"
-                          disabled={!taskId}
-                        >
-                          <StopIcon />
-                        </Button>
-                      )}
-                    </form>
-                  </CardFooter>
-                </Card>
-              </>
+                      Agent Card
+                    </TabsTrigger>
+                  )}
+                </TabsList>
+                <TabsContent value="chat">
+                  <Card className="bg-white shadow-lg rounded-xl border border-gray-100 hover:shadow-xl flex flex-col h-full">
+                    <CardHeader className="pb-3">
+                      <div className="flex items-center gap-2">
+                        <CardTitle className="text-base font-semibold text-gray-900">
+                          Send Message to Agent
+                        </CardTitle>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="flex-grow text-sm text-gray-600 pb-3">
+                      <ChatMessageList className="!h-[20em]">
+                        {transformA2AEvents(events).map((displayEvent) => {
+                          const variant =
+                            displayEvent.type === "user_message"
+                              ? "sent"
+                              : "received";
+                          return (
+                            <ChatBubble
+                              key={displayEvent.id}
+                              variant={variant}
+                              className={
+                                variant === "sent" ? "" : "!max-w-[90%] w-full"
+                              }
+                            >
+                              <ChatBubbleAvatar
+                                fallback={
+                                  displayEvent.type === "user_message"
+                                    ? "👨🏽"
+                                    : displayEvent.type === "error"
+                                      ? "💀"
+                                      : "🤖"
+                                }
+                              />
+                              <ChatBubbleMessage
+                                variant={variant}
+                                className={
+                                  variant === "received" ? "w-full" : ""
+                                }
+                              >
+                                <A2AEvent event={displayEvent} />
+                              </ChatBubbleMessage>
+                            </ChatBubble>
+                          );
+                        })}
+                      </ChatMessageList>
+                    </CardContent>
+                    <CardFooter>
+                      <form
+                        className="flex relative gap-0 w-full"
+                        onSubmit={onSubmit}
+                      >
+                        <ChatInput
+                          value={input}
+                          onChange={(e) => {
+                            setInput(e.target.value);
+                          }}
+                          onKeyDown={onKeyDown}
+                          className="min-h-12 bg-background shadow-none "
+                          disabled={isGenerating}
+                        />
+                        {!isGenerating ? (
+                          <Button
+                            className="absolute top-1/2 right-2 transform  -translate-y-1/2"
+                            type="submit"
+                            size="icon"
+                            disabled={!input}
+                          >
+                            <PaperAirplaneIcon />
+                          </Button>
+                        ) : (
+                          <Button
+                            onClick={stopGeneration}
+                            className="absolute top-1/2 right-2 transform  -translate-y-1/2"
+                            type="button"
+                            size="icon"
+                            disabled={!taskId}
+                          >
+                            <StopIcon />
+                          </Button>
+                        )}
+                      </form>
+                    </CardFooter>
+                  </Card>
+                </TabsContent>
+                {!!agentDetail.metadata?.agentCard && (
+                  <TabsContent value="agent-card">
+                    <Card className="bg-white shadow-lg rounded-xl border border-gray-100 hover:shadow-xl flex flex-col h-full">
+                      <CardHeader className="pb-3">
+                        <CardTitle className="text-base font-semibold text-gray-900">
+                          Agent Card
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent className="grow max-h-[22.8em] overflow-auto">
+                        <JsonView data={agentDetail.metadata.agentCard} />
+                      </CardContent>
+                    </Card>
+                  </TabsContent>
+                )}
+              </Tabs>
             ) : (
               <div className="flex flex-col items-center justify-center h-64 text-gray-400 bg-gray-50/50 rounded-xl border-2 border-dashed border-gray-200">
                 <div className="w-12 h-12 mb-4 opacity-40">
@@ -590,253 +696,66 @@ export default function AgentDetailPage() {
 
       <Separator />
 
-      <div className="rounded-xl my-8">
-        {/* Agent Path */}
-        <div className="space-y-2 py-4 mb-6">
-          <dt className="text-sm font-semibold uppercase tracking-wide">
-            {isA2A
-              ? "Agent Clients Connections info"
-              : "MCP Clients Connections info"}
-          </dt>
-
-          <div className="flex w-full items-center justify-between gap-4">
-            <ScrollableUrl url={url} className="max-w-full grow" />
-            {!("isError" in agentDetail && agentDetail.isError) && (
-              <AgentTokenDialog
-                agent={agentDetail as schemas.AgentWithId}
-                disabled={!isTheUserTheOwner}
-              />
-            )}
-          </div>
-        </div>{" "}
-        <div className="flex items-center gap-3 mb-6">
-          <div className="w-1 h-6 bg-gradient-to-b from-blue-500 to-purple-600 rounded-full"></div>
-          <h2 className="text-xl font-semibold text-gray-900">MCP Clients</h2>
-          <div className="text-sm text-gray-500 bg-gray-100 px-3 py-1 rounded-full">
-            Drag & drop to manage associations
-          </div>
-        </div>
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
-          {/* Associated Clients */}
-          <div className="space-y-4">
-            <div className="flex items-center gap-2">
-              <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
-              <h3 className="font-medium text-gray-700">
-                Associated with Agent
-              </h3>
-              <span className="px-2 py-1 text-xs font-medium bg-blue-100 text-blue-700 rounded-full">
-                {serverConnections.length}
-              </span>
-            </div>
-
-            <div
-              className={`h-full min-h-40 p-4 rounded-xl border-2 border-dashed transition-all duration-200 ${
-                draggingOver === 1
-                  ? "border-blue-400 bg-blue-50/70 shadow-lg scale-[1.02]"
-                  : "border-gray-200 bg-gray-50/50 hover:bg-gray-50"
-              }`}
-              onDragOver={(e) => {
-                e.preventDefault();
-                setDraggingOver(1);
-              }}
-              onDragLeave={(e) => {
-                if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-                  setDraggingOver(0);
-                }
-              }}
-              onDrop={(e) => {
-                e.preventDefault();
-                setDraggingOver(0);
-                const connectionId = e.dataTransfer.getData("connectionId");
-                associateClient(connectionId);
-              }}
-            >
-              {serverConnections.length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-32 text-gray-400">
-                  <div className="w-8 h-8 mb-2 opacity-40">
-                    <svg fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
-                    </svg>
-                  </div>
-                  {/* color dark gray */}
-                  <p className="text-sm text-gray-500">
-                    Drop clients here to associate
-                  </p>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {serverConnections.map((connection, index) => (
-                    <div
-                      key={connection.id}
-                      className={`group flex items-center gap-3 p-3 bg-white rounded-lg border shadow-sm hover:shadow-md transition-all duration-200 ${
-                        isTheUserTheOwner
-                          ? "cursor-grab active:cursor-grabbing"
-                          : "cursor-default"
-                      }`}
-                      draggable={isTheUserTheOwner}
-                      onDragStart={(e) => {
-                        e.dataTransfer.setData(
-                          "connectionId",
-                          connection.id || ""
-                        );
-                        e.dataTransfer.effectAllowed = "move";
-                      }}
-                      style={{
-                        animationDelay: `${index * 50}ms`,
-                        animation: "fadeInUp 0.3s ease-out forwards",
-                      }}
-                    >
-                      <ConnectionTypeIndicator type={connection.type} />
-
-                      <div
-                        className={`w-3 h-3 rounded-full flex-shrink-0 shadow-sm ${
-                          connection.isConnected
-                            ? "bg-emerald-500 shadow-emerald-200"
-                            : "bg-red-500 shadow-red-200"
-                        }`}
-                      >
-                        <div
-                          className={`w-full h-full rounded-full animate-pulse ${
-                            connection.isConnected
-                              ? "bg-emerald-400"
-                              : "bg-red-400"
-                          }`}
-                        ></div>
-                      </div>
-
-                      <span className="flex-1 font-medium text-gray-900 truncate">
-                        {connection.name || "Unknown connection"}
-                        {connection.versioningInfo?.versionNumber && (
-                          <span className="text-muted-foreground italic ml-2">
-                            v{connection.versioningInfo?.versionNumber}
-                          </span>
-                        )}
-                      </span>
-
-                      {isTheUserTheOwner && (
-                        <button
-                          onClick={() => dissociateClient(connection.id)}
-                          className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 group-hover:opacity-100"
-                          title="Remove association"
-                        >
-                          <MinusCircleIcon width={18} />
-                        </button>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Available Clients */}
-          <div className="space-y-4">
-            <div className="flex items-center gap-2">
-              <div className="w-2 h-2 bg-gray-400 rounded-full"></div>
-              <h3 className="font-medium text-gray-700">Available Clients</h3>
-              <span className="px-2 py-1 text-xs font-medium bg-gray-100 text-gray-600 rounded-full">
-                {unassociatedConnections.length}
-              </span>
-            </div>
-
-            <div
-              className={`h-full min-h-40 p-4 rounded-xl border-2 border-dashed transition-all duration-200 ${
-                draggingOver === 2
-                  ? "border-gray-400 bg-gray-100 shadow-lg scale-[1.02]"
-                  : "border-gray-200 bg-gray-50/30 hover:bg-gray-50/50"
-              }`}
-              onDragOver={(e) => {
-                e.preventDefault();
-                setDraggingOver(2);
-              }}
-              onDragLeave={(e) => {
-                if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-                  setDraggingOver(0);
-                }
-              }}
-              onDrop={(e) => {
-                e.preventDefault();
-                setDraggingOver(0);
-                const connectionId = e.dataTransfer.getData("connectionId");
-                dissociateClient(connectionId);
-              }}
-            >
-              {unassociatedConnections.length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-32 text-gray-400">
-                  <div className="w-8 h-8 mb-2 opacity-40">
-                    <svg fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z" />
-                    </svg>
-                  </div>
-                  <p className="text-sm">All clients are associated</p>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {unassociatedConnections.map((connection, index) => (
-                    <div
-                      key={connection.id}
-                      className={`group flex items-center gap-3 p-3 bg-white rounded-lg border shadow-sm hover:shadow-md transition-all duration-200 ${
-                        isTheUserTheOwner
-                          ? "cursor-grab active:cursor-grabbing"
-                          : "cursor-default"
-                      }`}
-                      draggable={isTheUserTheOwner}
-                      onDragStart={(e) => {
-                        e.dataTransfer.setData(
-                          "connectionId",
-                          connection.id || ""
-                        );
-                        e.dataTransfer.effectAllowed = "move";
-                      }}
-                      style={{
-                        animationDelay: `${index * 50}ms`,
-                        animation: "fadeInUp 0.3s ease-out forwards",
-                      }}
-                    >
-                      <ConnectionTypeIndicator type={connection.type} />
-
-                      <div
-                        className={`w-3 h-3 rounded-full flex-shrink-0 shadow-sm ${
-                          connection.isConnected
-                            ? "bg-emerald-500 shadow-emerald-200"
-                            : "bg-red-500 shadow-red-200"
-                        }`}
-                      >
-                        <div
-                          className={`w-full h-full rounded-full animate-pulse ${
-                            connection.isConnected
-                              ? "bg-emerald-400"
-                              : "bg-red-400"
-                          }`}
-                        ></div>
-                      </div>
-
-                      <span className="flex-1 font-medium text-gray-900 truncate">
-                        {connection.name || "Unknown connection"}
-                        {connection.versioningInfo?.versionNumber && (
-                          <span className="text-muted-foreground italic ml-2">
-                            v{connection.versioningInfo?.versionNumber}
-                          </span>
-                        )}
-                      </span>
-
-                      {isTheUserTheOwner && (
-                        <button
-                          onClick={() => associateClient(connection.id!)}
-                          className="p-1.5 rounded-lg text-gray-400 hover:text-blue-500 hover:bg-blue-50"
-                          title="Associate with server"
-                        >
-                          <PlusCircleIcon width={18} />
-                        </button>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
+      <div className="text-foreground mt-6">
+        If you want to configure connections for this Agent and show the
+        available endpoints to get the connection information, use the toggle
+        here below
       </div>
+      <div className="flex items-center gap-3 mt-4">
+        <span className="">Configure connections</span>
+        <Switch
+          checked={showConnectionSection}
+          onCheckedChange={setShowConnectionSection}
+        />
+      </div>
+      {showConnectionSection && (
+        <div className="rounded-xl my-8">
+          {/* Agent Path */}
+          <div className="space-y-2 py-4 mb-2">
+            <dt className="text-sm font-semibold uppercase tracking-wide">
+              {isA2A
+                ? "Agent Clients Connections info"
+                : "MCP Clients Connections info"}
+            </dt>
+
+            <div className="flex w-full items-center justify-between gap-4">
+              <ScrollableUrl url={url} className="max-w-full grow" />
+              {!("isError" in agentDetail && agentDetail.isError) && (
+                <AgentTokenDialog
+                  agent={agentDetail as schemas.AgentWithId}
+                  disabled={!canOperateOnItem}
+                />
+              )}
+            </div>
+          </div>
+          {
+            <div className="space-y-2 py-4 mb-6">
+              <dt className="text-sm font-semibold uppercase tracking-wide">
+                A2A Connected Clients Registry
+              </dt>
+
+              <div className="flex w-full items-center justify-between gap-4">
+                <ScrollableUrl url={registryUrl} className="max-w-full grow" />
+
+                {!("isError" in agentDetail && agentDetail.isError) && (
+                  <AgentTokenDialog
+                    agent={agentDetail as schemas.AgentWithId}
+                    disabled={!canOperateOnItem}
+                  />
+                )}
+              </div>
+            </div>
+          }
+          <ConnectionAssociationList
+            boundConnectionsTitle="Associated with Agent"
+            boundConnections={serverConnections}
+            unboundConnections={unassociatedConnections}
+            associateConnection={associateClient}
+            dissociateConnection={dissociateClient}
+            canOperate={canOperateOnItem}
+          />
+        </div>
+      )}
     </div>
   );
 }

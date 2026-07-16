@@ -20,6 +20,7 @@ import { authentication_strategy, schemas } from "aloha-shared";
 import { useContext } from "react";
 
 export interface PermissionChecker {
+  user(): authentication_strategy.UserPrincipalWithProjects | null;
   has(permission: authentication_strategy.Permissions): boolean;
   isAdministrator(): boolean;
   hasOwnership(
@@ -57,6 +58,7 @@ export function usePermissionChecker(): PermissionChecker {
     return isDefined(user) && isDefined(obj) && obj.creator === user.id;
   };
   return {
+    user: () => user,
     has: (permission) => has(permission),
     isAdministrator: () =>
       has(authentication_strategy.Permissions.Administration),

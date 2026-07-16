@@ -88,7 +88,7 @@ export default function TestbedAgentEditDialog({
       }
     }
 
-    loadServerData();
+    void loadServerData();
   }, [serverId]);
 
   const form = useForm({
@@ -107,7 +107,7 @@ export default function TestbedAgentEditDialog({
 
       setDialogOpen(false);
       if (onAccept) {
-        onAccept();
+        return onAccept();
       }
     } catch (e: unknown) {
       console.error(e);

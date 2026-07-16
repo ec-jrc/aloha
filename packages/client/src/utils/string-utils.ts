@@ -22,3 +22,10 @@ export function camelCaseToSpaces(str: string): string {
     .replace(/([a-z])([A-Z])/g, "$1 $2") // Insert space between lower and upper case
     .replace(/([A-Z])([A-Z][a-z])/g, "$1 $2"); // Insert space between consecutive upper case followed by lower case
 }
+
+export function normalizeForSearch(str: string) {
+  if (!str) {
+    return str;
+  }
+  return str.toLowerCase().replace(/\s/g, "");
+}

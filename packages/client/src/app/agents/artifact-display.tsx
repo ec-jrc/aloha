@@ -26,7 +26,7 @@ export default function ArtifactDisplay({ artifact }: { artifact: Artifact }) {
   const textContent = extractTextFromArtifact(artifact);
 
   return (
-    <Card className="w-full">
+    <Card className="w-full min-w-fit">
       <CardHeader>
         <CardTitle className="text-sm">
           {artifact.name || artifact.artifactId}

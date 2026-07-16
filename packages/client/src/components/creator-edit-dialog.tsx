@@ -25,7 +25,6 @@ import {
 import { usePermissionChecker } from "@/hooks/use-permission-checker";
 import { exceptionToMessage } from "@/utils/type-utils";
 import { Pencil } from "lucide-react";
-import { schemas } from "aloha-shared";
 import { useState } from "react";
 import { toast } from "sonner";
 import { UserSelect } from "./user-select";
@@ -76,10 +75,7 @@ export function CreatorEditDialog({
           !(
             permissionChecker.isAdministrator() ||
             (currentCreatorId &&
-              permissionChecker.hasOwnership({
-                visibility: schemas.Visibility.Public,
-                creator: currentCreatorId,
-              }))
+              permissionChecker.user()?.id === currentCreatorId)
           )
         }
       >

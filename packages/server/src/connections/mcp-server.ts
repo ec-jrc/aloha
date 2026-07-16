@@ -41,7 +41,11 @@ import { getLogger } from "../injector/provide-logger";
 import { TokenSetProvider } from "../middleware/oidc/oidc-support";
 import { A2AClient } from "./a2a-client";
 import MCPClient from "./mcp-client";
-import { RemoteClient } from "./remote-client";
+import {
+  filterOnlyMCPClient,
+  findConnectedConnection,
+} from "../utils/connection-utils";
+import { serveRegistry } from "../endpoints/servers-proxy-utils";
 
 const logger = getLogger("MCPSERVER");
 
@@ -231,22 +235,6 @@ class ServerSession {
   }
 }
 
-const findConnectedMCPConnection = (
-  mcpManager: MCPManager,
-  options: MCPBaseServerWithId
-) =>
-  Array.from(mcpManager.getConnections()).filter(
-    (c) =>
-      c.isConnected &&
-      ((c.connectionOptions.type === "agent" && c.id === options.id) ||
-        (options.connections &&
-          options.connections.includes(c.connectionOptions.id)))
-  );
-
-const filterOnlyMCPClient = (clients: RemoteClient[]) => {
-  return clients.filter((e) => e instanceof MCPClient);
-};
-
 const InvokeToolRequestSchema = z.object({
   toolId: z.string(),
   arguments: z.record(z.string(), z.unknown()).optional(),
@@ -277,6 +265,15 @@ const invokeTool = async (
   });
   if (!clientToCall) {
     throw new Error("Unable to find the requested tool");
+  }
+  const isExecutable = await verifyPermission(
+    clientToCall.connectionOptions,
+    req,
+    "execute"
+  );
+
+  if (!isExecutable) {
+    throw new Error(`User has no right to call the tool`);
   }
 
   const toolCall: mcpTypes.CallToolRequest = {
@@ -581,7 +578,7 @@ const createHubSessionServer: CreateSessionServerFunction = (
 ) => {
   const sessionServer = new Server(
     {
-      name: options.name,
+      name: options.name + " (HUB)",
       version: "1.0.0",
     },
     {
@@ -839,6 +836,10 @@ class MCPServer {
     this.mcpManager = injector().resolve("mcpManager");
   }
 
+  registry(req: Request, res: Response) {
+    return serveRegistry(req, res, this);
+  }
+
   public serve(messagesUrl: string) {
     if (!this.router) {
       const serverSessions = this.serverSessions;
@@ -853,7 +854,7 @@ class MCPServer {
         tokenSet: TokenSetProvider | undefined,
         forceRefresh: boolean = false
       ): Promise<(MCPClient | A2AClient)[]> => {
-        const connections = findConnectedMCPConnection(
+        const connections = findConnectedConnection(
           this.mcpManager,
           this.options
         );
@@ -868,14 +869,22 @@ class MCPServer {
             returnConnections.push(connectedClientsForSession[c.id]);
             continue;
           }
-          if (c.connectionOptions.serverProtocol !== "http") {
-            returnConnections.push(c);
-            continue;
+
+          const needsDedicatedClient =
+            tokenSet &&
+            c.connectionOptions.authentication?.type === "oidc_client_secret";
+
+          if (!needsDedicatedClient) {
+            if (c.connectionOptions.serverProtocol !== "http") {
+              returnConnections.push(c);
+              continue;
+            }
+            if (!c.isStateful) {
+              returnConnections.push(c);
+              continue;
+            }
           }
-          if (!c.isStateful) {
-            returnConnections.push(c);
-            continue;
-          }
+
           if (!(sessionId in serverSessions)) {
             throw new Error("There was an error when retrieving the session.");
           }

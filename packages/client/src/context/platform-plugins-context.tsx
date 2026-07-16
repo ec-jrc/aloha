@@ -14,7 +14,7 @@ export default function PlatformPluginsContextProvider({
       setLoadedPlugins(plugins);
     }
 
-    loadAllPlatformPlugins();
+    void loadAllPlatformPlugins();
   }, []);
 
   return (

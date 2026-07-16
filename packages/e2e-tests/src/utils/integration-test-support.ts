@@ -31,6 +31,7 @@ export type Process = {
 export interface IntegrationEnvironment {
   browser: Browser;
   page: Page;
+  serverPort: number;
   navigate: (path: string, page?: Page) => Promise<Page>;
   stop: () => Promise<void>;
 }
@@ -280,6 +281,7 @@ export async function startIntegrationTestEnvironment(): Promise<IntegrationEnvi
   return {
     browser,
     page,
+    serverPort: serverProcess.port,
     async navigate(path: string, tabPage?: Page) {
       const url = new URL(path, `http://localhost:${viteProcess.port}/`);
       const urlStr = url.toString();

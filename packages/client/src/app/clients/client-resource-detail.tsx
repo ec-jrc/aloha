@@ -89,7 +89,7 @@ export default function MCPClientResourceDetail({
         setErrorMessage("");
         setUriToFill(resourceTemplate.data.uriTemplate);
       } else if (safeResource.success) {
-        readResource(safeResource.data.uri);
+        void readResource(safeResource.data.uri);
       } else {
         throw Error(`Invalid Resource/ResourceTemplate`);
       }

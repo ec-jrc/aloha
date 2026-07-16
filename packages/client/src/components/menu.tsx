@@ -90,7 +90,7 @@ export default function Menu() {
       }
     }
 
-    fetchLatestVersion();
+    void fetchLatestVersion();
   }, []);
 
   return (

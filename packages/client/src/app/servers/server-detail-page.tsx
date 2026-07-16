@@ -14,21 +14,22 @@ governing permissions and limitations under the Licence.
 */
 
 import ConfirmDialog from "@/components/confirm-dialog";
+import ConnectionAssociationList from "@/components/connection-association-list";
 import { CreatorAndVisibilityEditor } from "@/components/creator-and-visibility-editor";
+import Loading from "@/components/loading";
 import PageTitle from "@/components/page-title";
+import { ScrollableUrl } from "@/components/scrollable-url";
+import { TagsList } from "@/components/tags-list";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { usePermissionChecker } from "@/hooks/use-permission-checker";
-import { useService } from "@/hooks/useService";
+import { useService } from "@/hooks/use-service";
+import { getAllGenericConnections } from "@/services/testbed-agents";
 import { exceptionToMessage } from "@/utils/type-utils";
-import {
-  MinusCircleIcon,
-  PlusCircleIcon,
-  TrashIcon,
-  ExclamationTriangleIcon,
-} from "@heroicons/react/16/solid";
+import { ExclamationTriangleIcon, TrashIcon } from "@heroicons/react/16/solid";
+import { schemas } from "aloha-shared";
 import { Pencil } from "lucide-react";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo } from "react";
 import { useNavigate, useParams } from "react-router";
 import { toast } from "sonner";
 import {
@@ -40,12 +41,6 @@ import {
   setServerVisibility,
 } from "../../services/servers";
 import MCPServerEditDialog from "./server-edit-dialog";
-import ConnectionTypeIndicator from "@/components/connection-type-indicator";
-import { getAllGenericConnections } from "@/services/testbed-agents";
-import Loading from "@/components/loading";
-import { ScrollableUrl } from "@/components/scrollable-url";
-import { schemas } from "aloha-shared";
-import { TagsList } from "@/components/tags-list";
 
 const PING_TIMEOUT = 5000;
 
@@ -94,13 +89,11 @@ export default function MCPServerDetailPage() {
     [isConnectionLoading, isServerLoading]
   );
 
-  const [draggingOver, setDraggingOver] = useState(0);
-
-  const permissionCheker = usePermissionChecker();
+  const permissionChecker = usePermissionChecker();
 
   const isTheUserTheOwner = useMemo(() => {
-    return permissionCheker.hasOwnership(serverDetail);
-  }, [serverDetail, permissionCheker]);
+    return permissionChecker.hasOwnership(serverDetail);
+  }, [serverDetail, permissionChecker]);
 
   const navigate = useNavigate();
 
@@ -182,7 +175,7 @@ export default function MCPServerDetailPage() {
   async function doDeleteServer() {
     try {
       await deleteServer(id!);
-      navigate(`/servers`);
+      void navigate(`/servers`);
     } catch (e) {
       console.error(e);
       toast.error(exceptionToMessage(e));
@@ -269,6 +262,13 @@ export default function MCPServerDetailPage() {
               <dd className="text-sm text-muted-foreground">
                 Use this URL to access to discover and invoke tools utilities
               </dd>
+              <ScrollableUrl
+                url={`${window.location.origin}/api/mcp/${serverDetail.serverPath}/registry/v1`}
+                className="max-w-full mt-4"
+              />
+              <dd className="text-sm text-muted-foreground">
+                Use this URL to access to discover the connected A2A clients
+              </dd>
             </div>
 
             <div className="space-y-2 py-4">
@@ -323,236 +323,14 @@ export default function MCPServerDetailPage() {
         </div>
       </div>
 
-      {/* MCP Clients Section */}
-      <div className="rounded-xl my-8">
-        <div className="flex items-center gap-3 mb-6">
-          <div className="w-1 h-6 bg-gradient-to-b from-blue-500 to-purple-600 rounded-full"></div>
-          <h2 className="text-xl font-semibold text-gray-900">MCP Clients</h2>
-          <div className="text-sm text-gray-500 bg-gray-100 px-3 py-1 rounded-full">
-            Drag & drop to manage associations
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Associated Clients */}
-          <div className="space-y-4">
-            <div className="flex items-center gap-2">
-              <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
-              <h3 className="font-medium text-gray-700">
-                Associated with Server
-              </h3>
-              <span className="px-2 py-1 text-xs font-medium bg-blue-100 text-blue-700 rounded-full">
-                {serverConnections.length}
-              </span>
-            </div>
-
-            <div
-              className={`h-full min-h-40 p-4 rounded-xl border-2 border-dashed transition-all duration-200 ${
-                draggingOver === 1
-                  ? "border-blue-400 bg-blue-50/70 shadow-lg scale-[1.02]"
-                  : "border-gray-200 bg-gray-50/50 hover:bg-gray-50"
-              }`}
-              onDragOver={(e) => {
-                e.preventDefault();
-                setDraggingOver(1);
-              }}
-              onDragLeave={(e) => {
-                if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-                  setDraggingOver(0);
-                }
-              }}
-              onDrop={(e) => {
-                e.preventDefault();
-                setDraggingOver(0);
-                const connectionId = e.dataTransfer.getData("connectionId");
-                associateClient(connectionId);
-              }}
-            >
-              {serverConnections.length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-32 text-gray-400">
-                  <div className="w-8 h-8 mb-2 opacity-40">
-                    <svg fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
-                    </svg>
-                  </div>
-                  <p className="text-sm text-gray-500">
-                    Drop clients here to associate
-                  </p>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {serverConnections.map((connection, index) => (
-                    <div
-                      key={connection.id}
-                      className={`group flex items-center gap-3 p-3 bg-white rounded-lg border shadow-sm hover:shadow-md transition-all duration-200 ${
-                        isTheUserTheOwner
-                          ? "cursor-grab active:cursor-grabbing"
-                          : "cursor-default"
-                      }`}
-                      draggable={isTheUserTheOwner}
-                      onDragStart={(e) => {
-                        e.dataTransfer.setData(
-                          "connectionId",
-                          connection.id || ""
-                        );
-                        e.dataTransfer.effectAllowed = "move";
-                      }}
-                      style={{
-                        animationDelay: `${index * 50}ms`,
-                        animation: "fadeInUp 0.3s ease-out forwards",
-                      }}
-                    >
-                      <ConnectionTypeIndicator type={connection.type} />
-
-                      <div
-                        className={`w-3 h-3 rounded-full flex-shrink-0 shadow-sm ${
-                          connection.isConnected
-                            ? "bg-emerald-500 shadow-emerald-200"
-                            : "bg-red-500 shadow-red-200"
-                        }`}
-                      >
-                        <div
-                          className={`w-full h-full rounded-full animate-pulse ${
-                            connection.isConnected
-                              ? "bg-emerald-400"
-                              : "bg-red-400"
-                          }`}
-                        ></div>
-                      </div>
-
-                      <span className="flex-1 font-medium text-gray-900 truncate">
-                        {connection.name || "Unknown connection"}
-                        {connection.versioningInfo && (
-                          <span className="text-muted-foreground italic ml-2">
-                            v{connection.versioningInfo.versionNumber}
-                          </span>
-                        )}
-                      </span>
-
-                      {isTheUserTheOwner && (
-                        <button
-                          onClick={() => dissociateClient(connection.id)}
-                          className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-all duration-150 group-hover:opacity-100"
-                          title="Remove association"
-                        >
-                          <MinusCircleIcon width={18} />
-                        </button>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Available Clients */}
-          <div className="space-y-4">
-            <div className="flex items-center gap-2">
-              <div className="w-2 h-2 bg-gray-400 rounded-full"></div>
-              <h3 className="font-medium text-gray-700">Available Clients</h3>
-              <span className="px-2 py-1 text-xs font-medium bg-gray-100 text-gray-600 rounded-full">
-                {unassociatedConnections.length}
-              </span>
-            </div>
-
-            <div
-              className={`h-full min-h-40 p-4 rounded-xl border-2 border-dashed transition-all duration-200 ${
-                draggingOver === 2
-                  ? "border-gray-400 bg-gray-100 shadow-lg scale-[1.02]"
-                  : "border-gray-200 bg-gray-50/30 hover:bg-gray-50/50"
-              }`}
-              onDragOver={(e) => {
-                e.preventDefault();
-                setDraggingOver(2);
-              }}
-              onDragLeave={(e) => {
-                if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-                  setDraggingOver(0);
-                }
-              }}
-              onDrop={(e) => {
-                e.preventDefault();
-                setDraggingOver(0);
-                const connectionId = e.dataTransfer.getData("connectionId");
-                dissociateClient(connectionId);
-              }}
-            >
-              {unassociatedConnections.length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-32 text-gray-400">
-                  <div className="w-8 h-8 mb-2 opacity-40">
-                    <svg fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z" />
-                    </svg>
-                  </div>
-                  <p className="text-sm">All clients are associated</p>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {unassociatedConnections.map((connection, index) => (
-                    <div
-                      key={connection.id}
-                      className={`group flex items-center gap-3 p-3 bg-white rounded-lg border shadow-sm hover:shadow-md transition-all duration-200 ${
-                        isTheUserTheOwner
-                          ? "cursor-grab active:cursor-grabbing"
-                          : "cursor-default"
-                      }`}
-                      draggable={isTheUserTheOwner}
-                      onDragStart={(e) => {
-                        e.dataTransfer.setData(
-                          "connectionId",
-                          connection.id || ""
-                        );
-                        e.dataTransfer.effectAllowed = "move";
-                      }}
-                      style={{
-                        animationDelay: `${index * 50}ms`,
-                        animation: "fadeInUp 0.3s ease-out forwards",
-                      }}
-                    >
-                      <ConnectionTypeIndicator type={connection.type} />
-
-                      <div
-                        className={`w-3 h-3 rounded-full flex-shrink-0 shadow-sm ${
-                          connection.isConnected
-                            ? "bg-emerald-500 shadow-emerald-200"
-                            : "bg-red-500 shadow-red-200"
-                        }`}
-                      >
-                        <div
-                          className={`w-full h-full rounded-full animate-pulse ${
-                            connection.isConnected
-                              ? "bg-emerald-400"
-                              : "bg-red-400"
-                          }`}
-                        ></div>
-                      </div>
-
-                      <span className="flex-1 font-medium text-gray-900 truncate">
-                        {connection.name || "Unknown connection"}
-                        {connection.versioningInfo && (
-                          <span className="text-muted-foreground italic ml-2">
-                            v{connection.versioningInfo.versionNumber}
-                          </span>
-                        )}
-                      </span>
-
-                      {isTheUserTheOwner && (
-                        <button
-                          onClick={() => associateClient(connection.id!)}
-                          className="p-1.5 rounded-lg text-gray-400 hover:text-blue-500 hover:bg-blue-50 transition-all duration-150 group-hover:opacity-100"
-                          title="Associate with server"
-                        >
-                          <PlusCircleIcon width={18} />
-                        </button>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
+      <ConnectionAssociationList
+        boundConnections={serverConnections}
+        boundConnectionsTitle="Associated with Server"
+        unboundConnections={unassociatedConnections}
+        associateConnection={associateClient}
+        dissociateConnection={dissociateClient}
+        canOperate={isTheUserTheOwner}
+      />
     </div>
   );
 }

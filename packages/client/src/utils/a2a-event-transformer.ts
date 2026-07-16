@@ -97,8 +97,13 @@ function getTaskDisplayEventIndex(
   taskId: string,
   displayEvents: A2ADisplayEvent[]
 ) {
+  // Only search after the last user_message to avoid merging across conversation turns
+  const lastUserMsgIndex = displayEvents.findLastIndex(
+    (e) => e.type === "user_message"
+  );
+  const searchStart = lastUserMsgIndex >= 0 ? lastUserMsgIndex + 1 : 0;
   return displayEvents.findIndex(
-    (e) => e.type === "task_status" && e.taskId === taskId
+    (e, i) => i >= searchStart && e.type === "task_status" && e.taskId === taskId
   );
 }
 
@@ -154,7 +159,7 @@ export function transformA2AEvents(
           // Concatenate messages if both exist
           const combinedMessage = [taskStatusEvent.message, statusMessage]
             .filter(Boolean)
-            .join("\n");
+            .join("");
 
           displayEvents[taskStatusEventIndex] = {
             ...taskStatusEvent,
@@ -249,7 +254,7 @@ export function transformA2AEvents(
 
           const combinedMessage = [lastEvent.message, statusMessage]
             .filter(Boolean)
-            .join("\n");
+            .join("");
 
           displayEvents[taskStatusEventIndex] = {
             ...lastEvent,
@@ -290,11 +295,18 @@ export function transformA2AEvents(
 
     // Error messages
     if (event.type === "error_message") {
+      const rawEvent = event as unknown as Record<string, unknown>;
+      const message =
+        (typeof rawEvent.data === "string" && rawEvent.data) ||
+        "An error occurred" +
+          (rawEvent.responseCode
+            ? ` (status ${rawEvent.responseCode})`
+            : "");
       displayEvents.push({
         id: crypto.randomUUID(),
         timestamp,
         type: "error",
-        message: typeof event === "string" ? event : "An error occurred",
+        message,
         details: event,
         rawEvents: [event],
       });

@@ -15,44 +15,53 @@ governing permissions and limitations under the Licence.
 
 import PageTitle from "@/components/page-title";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import SearchBox from "@/components/search-box";
 import Loading from "@/components/loading";
-import { useService } from "@/hooks/useService";
+import { useService } from "@/hooks/use-service";
 import { getTestbedAgentsList } from "@/services/testbed-agents";
 import { isWithErrorsObject, WithErrors } from "@/services/utils";
 import { DocumentPlusIcon } from "@heroicons/react/16/solid";
 import { schemas } from "aloha-shared";
-import { useCallback, useState } from "react";
+import { useState } from "react";
 import { TestbedAgentCard } from "./testbed-agent-card";
 import TestbedAgentEditDialog from "./testbed-agent-edit-dialog";
+
+type TestbedAgentItem =
+  | schemas.TestbedAgentWithId
+  | WithErrors<schemas.TestbedAgentWithId>;
+
+const testbedAgentPredicate = (a: TestbedAgentItem, search: string) => {
+  if (isWithErrorsObject(a)) return true;
+  return search
+    .toLowerCase()
+    .split(" ")
+    .some(
+      (f) =>
+        a.name?.toLowerCase().includes(f) ||
+        !!a.description?.toLowerCase().includes(f)
+    );
+};
 
 export default function TestbedAgentsListPage() {
   const [reloadAgents, setReloadAgents] = useState(1);
 
-  const [isLoading, agents] = useService<
-    (schemas.TestbedAgentWithId | WithErrors<schemas.TestbedAgentWithId>)[]
-  >(() => getTestbedAgentsList(), [], [], [reloadAgents]);
-  const [filter, setFilter] = useState<string>("");
-
-  const filterAgents = useCallback(
-    (a: schemas.TestbedAgent | WithErrors<schemas.TestbedAgent>) => {
-      if (filter.length < 3) return true;
-      return filter
-        .toLowerCase()
-        .split(" ")
-        .map(
-          (f) =>
-            !isWithErrorsObject(a) &&
-            (a.name?.toLowerCase().includes(f) ||
-              !!a.description?.toLowerCase().includes(f))
-        )
-        .some((f) => f);
-    },
-    [filter]
+  const [isLoading, agents] = useService<TestbedAgentItem[]>(
+    () => getTestbedAgentsList(),
+    [],
+    [],
+    [reloadAgents]
   );
+  const [filteredAgents, setFilteredAgents] = useState<
+    TestbedAgentItem[] | null
+  >(null);
+
+  const displayedAgents = filteredAgents ?? agents;
 
   return (
-    <div className="max-w-8xl mx-auto" data-testid="testbed-agent-list-page-witness">
+    <div
+      className="max-w-8xl mx-auto"
+      data-testid="testbed-agent-list-page-witness"
+    >
       {/* Page Header */}
       <div className="mb-8">
         <div className="flex justify-between items-center mb-6">
@@ -73,12 +82,11 @@ export default function TestbedAgentsListPage() {
 
         {/* Search and Filter */}
 
-        <Input
-          type="search"
-          className="w-full bg-white border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-          placeholder="Search clients by name, description, or tags..."
-          value={filter}
-          onChange={(e) => setFilter(e.target.value)}
+        <SearchBox
+          items={agents}
+          predicate={testbedAgentPredicate}
+          onFilter={setFilteredAgents}
+          placeholder="Search testbed agents by name or description..."
         />
       </div>
 
@@ -86,9 +94,9 @@ export default function TestbedAgentsListPage() {
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
         {!isLoading &&
-          agents
-            .filter(filterAgents)
-            .map((agent) => <TestbedAgentCard key={agent.id} agent={agent} />)}
+          displayedAgents.map((agent) => (
+            <TestbedAgentCard key={agent.id} agent={agent} />
+          ))}
       </div>
     </div>
   );
