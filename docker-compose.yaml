@@ -84,17 +84,7 @@ services:
       MONGODB_URI: mongodb://localhost:27017/ALOHA
       OIDC_ENABLED: "true"
       OIDC_CODE_REDIRECT_URI: http://localhost:3000/api/oauth2/code/login
-      OIDC_JWKS: |
-        {"keys": [{
-        "kty": "EC",
-        "use": "sig",
-        "alg": "ES512",
-        "kid": "932708a7-8967-4e70-9850-c0882e5dbeb2",
-        "crv": "P-521",
-        "x": "AT_2CRllONk35chbPJL0QXS-FOMmCFFcTFoX4wGil8XVPJGrXdqW_itFo2OI9g-SllYB7WN8gOmvQ3AMC1ExNZfz",
-        "y": "AAEBIcNLtfEFRru04M1OTj5YEy0asqSi3zYHm_K0LXkEfcSWRs4s5e78M2aepyKl-XRT-2x3ZhIQrjXA_ohFysAx",
-        "d": "AbldUHHZu2_DKH4xY9VD5_xAquyfEpCK-LQzBqRVpN0AqqaSQgK06JeieG5s1EcqxBh5UZvI9GASMnvrWKGu-17m"
-        }]}
+      OIDC_JWKS: "replace me with the JWKS"
       OIDC_CLIENT_ID: aloha
       OIDC_ISSUER_URL: http://localhost:8080/realms/oidc
       OIDC_IDENTITY_PROPAGATION_SERVICE_PATH: ""
