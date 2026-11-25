@@ -1,3 +1,6 @@
+import { ClientRequestSchema, CompatibilityCallToolResultSchema, CompleteResultSchema, GetPromptResultSchema, ListToolsResultSchema, ReadResourceResultSchema } from "@modelcontextprotocol/core";
+import { ClientRequest } from "@modelcontextprotocol/server";
+
 /*
 Copyright (C) 2025 European Union
  
@@ -12,16 +15,6 @@ the Licence is distributed on an “AS IS” basis, WITHOUT WARRANTIES OR CONDIT
 OF ANY KIND, either express or implied. See the Licence for the specific language
 governing permissions and limitations under the Licence.
 */
-
-import {
-  ClientRequest,
-  ClientRequestSchema,
-  CompatibilityCallToolResultSchema,
-  CompleteResultSchema,
-  GetPromptResultSchema,
-  ListToolsResultSchema,
-  ReadResourceResultSchema,
-} from "@modelcontextprotocol/sdk/types.js";
 import {
   authentication_strategy,
   endpoints_schemas,
@@ -33,7 +26,7 @@ import { injector } from "../injector/injector";
 import { getLogger } from "../injector/provide-logger";
 import MCPClient from "../connections/mcp-client";
 import { authorise } from "../middleware/authorise";
-import { buildTokenSetProviderFromRequest } from "../middleware/oidc/oidc-support";
+import { buildTokenSetProviderFromSession } from "../middleware/oidc/oidc-support";
 import { findCachedUsersById } from "../utils/cache.utils";
 import {
   compositeComparer,
@@ -167,9 +160,7 @@ export function clientsRoutes() {
 
         // If the connection does not have a creator, set it now
         let creator = connection.creator;
-        // if (!authentication_strategy.isUserAuthenticated(req)) {
-        //   throw new HTTPError(500, "Could not resolve the logged user");
-        // }
+
         const user = authentication_strategy.getUserFromSession(req);
         if (
           !creator &&
@@ -464,6 +455,17 @@ export function clientsRoutes() {
 
       const identityPropagationService = await idps;
 
+      const registrar = injector().resolve("oidcIdentityPropagationRegistrar");
+
+      if (!registrar) {
+        res
+          .json({
+            registered: undefined,
+          })
+          .end();
+        return;
+      }
+
       const client = await clientRepository().findById(id);
 
       if (!client) {
@@ -707,7 +709,7 @@ export function clientsRoutes() {
           cachedClient ||
           new MCPClient(
             client.connectionOptions,
-            buildTokenSetProviderFromRequest(req)
+            buildTokenSetProviderFromSession(req)
           );
         try {
           const response = await newClient.sendRequest(clientRequest, schema);

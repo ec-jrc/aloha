@@ -23,7 +23,7 @@ import { MongoDBVisibilityRepository } from "./mongo-db-visibility-repository";
 import { TestbedAgentRepository } from "../interfaces/testbed-agent-repository-interface";
 
 export class MongoDbTestbedAgentRepository
-  extends MongoDBVisibilityRepository<schemas.TestbedAgentWithId>
+  extends MongoDBVisibilityRepository<schemas.TestbedAgent>
   implements TestbedAgentRepository
 {
   public static inject = ["serverSecret", INJECTOR_TOKEN] as const;

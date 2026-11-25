@@ -33,6 +33,7 @@ export type OidcInjector = {
   oidcJWKS: string | undefined;
   oidcCodeRedirectUri: string | undefined;
   oidcScope: string;
+  oidcAudience: string | undefined;
   oidcHome: string;
   oidcIdentityPropagationRegistrar:
     | Promise<IdentityPropagationServiceRegistrar>
@@ -57,6 +58,7 @@ export function provideOIDC<T extends { isProduction: boolean }>(
   const OIDC_JWKS = process.env.OIDC_JWKS;
   const OIDC_CODE_REDIRECT_URI = process.env.OIDC_CODE_REDIRECT_URI;
   const OIDC_SCOPE = process.env.OIDC_SCOPE || "openid email profile";
+  const OIDC_AUDIENCE = process.env.OIDC_AUDIENCE || OIDC_CLIENT_ID;
   const OIDC_HOME = isProduction
     ? "/"
     : process.env.OIDC_HOME || "http://localhost:5173/";
@@ -71,11 +73,14 @@ export function provideOIDC<T extends { isProduction: boolean }>(
   const OIDC_IDENTITY_PROPAGATION_REGISTRAR_PATH =
     process.env.OIDC_IDENTITY_PROPAGATION_REGISTRAR_PATH;
 
+  const oidcRegistrarEnabled =
+    process.env.OIDC_USE_IDENTITY_PROPAGATION_REGISTRAR !== "false";
+
   let oidcIDPRegistrar:
     | Promise<IdentityPropagationServiceRegistrar>
     | undefined;
 
-  if (oidcUseIdentityPropagationService) {
+  if (oidcUseIdentityPropagationService && oidcRegistrarEnabled) {
     if (OIDC_IDENTITY_PROPAGATION_REGISTRAR_PATH) {
       const importModule = import(
         OIDC_IDENTITY_PROPAGATION_REGISTRAR_PATH
@@ -141,6 +146,7 @@ export function provideOIDC<T extends { isProduction: boolean }>(
     .provideValue("oidcJWKS", OIDC_JWKS)
     .provideValue("oidcCodeRedirectUri", OIDC_CODE_REDIRECT_URI)
     .provideValue("oidcScope", OIDC_SCOPE)
+    .provideValue("oidcAudience", OIDC_AUDIENCE)
     .provideValue("oidcHome", OIDC_HOME)
     .provideValue("oidcAlohaTokenSetProvider", tokenSetProvider)
     .provideValue("oidcIdentityPropagationRegistrar", oidcIDPRegistrar)

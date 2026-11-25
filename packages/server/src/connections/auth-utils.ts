@@ -1,3 +1,5 @@
+import { OAuthClientProvider } from "@modelcontextprotocol/client";
+
 /*
 Copyright (C) 2025 European Union
  
@@ -12,8 +14,6 @@ the Licence is distributed on an "AS IS" basis, WITHOUT WARRANTIES OR CONDITIONS
 OF ANY KIND, either express or implied. See the Licence for the specific language
 governing permissions and limitations under the Licence.
 */
-
-import { OAuthClientProvider } from "@modelcontextprotocol/sdk/client/auth.js";
 import { schemas } from "aloha-shared";
 import {
   TokenExchangeAuthProvider,

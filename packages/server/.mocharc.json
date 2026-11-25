@@ -1,7 +1,7 @@
 {
   "extension": ["ts"],
   "spec": "tests/**/*.spec.ts",
-  "require": ["tests/db-setup.js", "tests/setup.js", "ts-node/register"],
+  "require": ["tests/db-setup.cjs", "tests/setup.cjs", "ts-node/register"],
   "node-option": ["loader=ts-node/esm", "es-module-specifier-resolution=node"],
   "recursive": true,
   "mochaExplorer.files": "tests/**/*.ts",

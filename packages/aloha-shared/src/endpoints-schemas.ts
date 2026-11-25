@@ -1,3 +1,5 @@
+import { PromptSchema, ResourceSchema, ResourceTemplateSchema, ToolSchema } from "@modelcontextprotocol/core";
+
 /*
 Copyright (C) 2025 European Union
  
@@ -12,13 +14,6 @@ the Licence is distributed on an “AS IS” basis, WITHOUT WARRANTIES OR CONDIT
 OF ANY KIND, either express or implied. See the Licence for the specific language
 governing permissions and limitations under the Licence.
 */
-
-import {
-  PromptSchema,
-  ResourceSchema,
-  ResourceTemplateSchema,
-  ToolSchema,
-} from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import {
   MCPConnectionOptionsWithIdSchema,
@@ -160,6 +155,13 @@ export const JWTTokenResponseSchema = z.object({
 });
 
 export type JWTTokenResponse = z.infer<typeof JWTTokenResponseSchema>;
+
+export const AllowedHttpHeadersOverridesSchema = z.object({
+  allowedHttpHeadersOverrides: z.array(z.string()),
+});
+export type AllowedHttpHeadersOverrides = z.infer<
+  typeof AllowedHttpHeadersOverridesSchema
+>;
 
 export const HubStatusSchema = z.object({
   clients: z.object({

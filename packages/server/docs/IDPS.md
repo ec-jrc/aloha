@@ -18,8 +18,7 @@ The base `IdentityPropagationService` interface defines the following methods:
 interface IdentityPropagationService {
   getServerMetadata(): ServerMetadata;
   getClientRegistration(clientId: string): Promise<ClientRegistrationMetadata>;
-  verifyToken(token: string): Promise<boolean>;
-  refreshTokenSet(tokenSet: TokenSet): Promise<TokenSet>;
+  resolveToken(token: string): Promise<TokenResolutionResult>;
   init(): Promise<void>;
   getInfo(): Promise<IdentityPropagationServiceInfo>;
   tokenExchange(tokenSet: TokenSet, audience: string): Promise<TokenSet>;
@@ -91,19 +90,13 @@ async getClientRegistration(clientId: string):
 }
 ```
 
-#### `verifyToken()` - Validate Token
+#### `resolveToken()` - Resolve Token Identity and Refresh
 
 ```typescript
-async verifyToken(token: string): Promise<boolean> {
-  // Verify token validity with your identity provider
-}
-```
-
-#### `refreshTokenSet()` - Refresh Tokens
-
-```typescript
-async refreshTokenSet(tokenSet: TokenSet): Promise<TokenSet> {
-  // Refresh expired tokens
+async resolveToken(token: string): Promise<TokenResolutionResult> {
+  // 1. Retrieve the identity/user information attached to the token
+  // 2. If the input token is single-use ("consumed"), produce a fresh,
+  //    reusable TokenSet that downstream operations can use
 }
 ```
 
@@ -237,43 +230,35 @@ export class MyCustomIdentityPropagationService
     const tokenExpiryTime = accessTokenDecoded.exp || now + 1;
 
     if (tokenExpiryTime < now) {
-      this.alohaTokenSet = await this.refreshTokenSet(this.alohaTokenSet);
+      this.alohaTokenSet = await this.getCredentialGrantTokenSet();
     }
 
     return this.alohaTokenSet;
   }
 
   /**
-   * Refreshes an expired token set using the refresh token.
-   * If no refresh token is available, obtains a new token set using client credentials.
+   * Resolves a token: retrieves the identity/user attached to it and, when the
+   * input token is single-use ("consumed"), returns a fresh, reusable TokenSet.
    */
-  public refreshTokenSet(tokenSet: TokenSet): Promise<TokenSet> {
-    if (tokenSet.refresh_token) {
-      return openIdClient.refreshTokenGrant(
-        this.oidcConfiguration,
-        tokenSet.refresh_token
-      );
+  public async resolveToken(token: string): Promise<TokenResolutionResult> {
+    const introspection = await openIdClient.tokenIntrospection(
+      this.oidcConfiguration,
+      token
+    );
+    if (!introspection.active) {
+      throw new Error("Token is not active");
     }
-    return this.getCredentialGrantTokenSet();
-  }
-
-  /**
-   * Verifies the validity of a token by performing token introspection.
-   * Returns true if the token is active and valid, false otherwise.
-   */
-  public async verifyToken(token: string): Promise<boolean> {
-    try {
-      const introspection = await openIdClient.tokenIntrospection(
-        this.oidcConfiguration,
-        token
-      );
-      return introspection.active;
-    } catch (e) {
-      logger()
-        .child({ token, error: e })
-        .error(`Unable to introspect the token`);
-      return false;
-    }
+    return {
+      identity: {
+        clientId: introspection.client_id || "unknown client id",
+        scope: introspection.scope || "",
+        exp: introspection.exp,
+        iat: introspection.iat,
+        name: introspection.username || "Unknown",
+      },
+      // Optionally return a fresh TokenSet when the input token is consumed
+      tokenSet: undefined,
+    };
   }
 
   /**

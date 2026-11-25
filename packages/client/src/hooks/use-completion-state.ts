@@ -12,12 +12,8 @@ the Licence is distributed on an “AS IS” basis, WITHOUT WARRANTIES OR CONDIT
 OF ANY KIND, either express or implied. See the Licence for the specific language
 governing permissions and limitations under the Licence.
 */
-
+import { ResourceTemplateReference, PromptReference } from "@modelcontextprotocol/client";
 import { useState, useCallback, useEffect, useRef, useMemo } from "react";
-import {
-  ResourceReference,
-  PromptReference,
-} from "@modelcontextprotocol/sdk/types.js";
 
 interface CompletionState {
   completions: Record<string, string[]>;
@@ -40,7 +36,7 @@ function debounce<T extends (...args: any[]) => PromiseLike<void>>(
 
 export function useCompletionState(
   handleCompletion: (
-    ref: ResourceReference | PromptReference,
+    ref: ResourceTemplateReference | PromptReference,
     argName: string,
     value: string,
     signal?: AbortSignal
@@ -79,7 +75,7 @@ export function useCompletionState(
     return debounce(
       // eslint-disable-next-line react-hooks/refs
       async (
-        ref: ResourceReference | PromptReference,
+        ref: ResourceTemplateReference | PromptReference,
         argName: string,
         value: string
       ) => {

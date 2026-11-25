@@ -16,13 +16,13 @@ governing permissions and limitations under the Licence.
 import { endpoints_schemas, schemas } from "aloha-shared";
 import { Observable, catchError, map, throwError } from "rxjs";
 import { SSE, ReadyStateEvent, SSEvent } from "sse.js";
+import { ClientRequest } from "@modelcontextprotocol/client";
 import {
   customFetch,
   safeParseWithErrors,
   setCreatorGenerator,
   setVisibilityGenerator,
 } from "./utils";
-import { ClientRequest } from "@modelcontextprotocol/sdk/types.js";
 import z from "zod";
 const apiClientsUrl = "/api/client";
 // const apiServersUrl = "/api/server"
@@ -90,7 +90,7 @@ export async function isConnectionRegisteredWithIdentityPropagationService(
     `${apiClientsUrl}/${id}/isRegisteredInIdentityPropagationService`
   );
   const data = await response.json();
-  return z.object({ registered: z.boolean() }).parse(data);
+  return z.object({ registered: z.boolean().optional() }).parse(data);
 }
 
 export async function getConnectionDetail(id: string) {

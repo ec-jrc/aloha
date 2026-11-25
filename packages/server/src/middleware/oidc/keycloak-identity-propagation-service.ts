@@ -13,33 +13,41 @@ OF ANY KIND, either express or implied. See the Licence for the specific languag
 governing permissions and limitations under the Licence.
 */
 
+import * as jose from "jose";
+import * as openIdClient from "openid-client";
 import { injector } from "../../injector/injector";
+import { getLogger } from "../../injector/provide-logger";
+import { unknownToString } from "../../utils/type-utils";
 import {
   IdentityPropagationService,
   IdentityPropagationServiceInfo,
+  TokenResolutionResult,
 } from "./identity-propagation-service";
 import {
   ClientRegistrationMetadata,
   ClientRegistrationMetadataSchema,
   initOpenIdClientConfiguration,
+  resolveDisplayName,
   ServerMetadata,
   ServerMetadataSchema,
   TokenSet,
   TokenSetSchema,
 } from "./oidc-support";
-import * as openIdClient from "openid-client";
-import * as jose from "jose";
-import { getLogger } from "../../injector/provide-logger";
 
-const PROVIDER_NAME = "KEYCLOCK-IDPS";
+const PROVIDER_NAME = "KEYCLOAK-IDPS";
 const logger = getLogger(PROVIDER_NAME);
 
 export class KeycloakIdentityPropagationService implements IdentityPropagationService {
   private oidcConfiguration!: openIdClient.Configuration;
   private alohaTokenSet!: TokenSet;
 
+  // eslint-disable-next-line @typescript-eslint/require-await
+  async getConfiguration(): Promise<openIdClient.Configuration> {
+    return this.oidcConfiguration;
+  }
+
   async init(): Promise<void> {
-    this.oidcConfiguration = await initOpenIdClientConfiguration();
+    this.oidcConfiguration = await initOpenIdClientConfiguration(undefined);
     this.alohaTokenSet = await this.getAlohaTokenSet();
     logger()
       .child({
@@ -91,34 +99,46 @@ export class KeycloakIdentityPropagationService implements IdentityPropagationSe
     const tokenExpiryTime = accessTokenDecoded.exp || now + 1;
 
     if (tokenExpiryTime < now || forceRefresh) {
-      this.alohaTokenSet = await this.refreshTokenSet(this.alohaTokenSet);
+      this.alohaTokenSet = await this.getCredentialGrantTokenSet();
     }
 
     return this.alohaTokenSet;
   }
 
-  public refreshTokenSet(tokenSet: TokenSet): Promise<TokenSet> {
-    if (tokenSet.refresh_token) {
-      return openIdClient.refreshTokenGrant(
-        this.oidcConfiguration,
-        tokenSet.refresh_token
-      );
-    }
-    return this.getCredentialGrantTokenSet();
-  }
-
-  public async verifyToken(token: string): Promise<boolean> {
+  public async resolveToken(token: string): Promise<TokenResolutionResult> {
     try {
       const introspection = await openIdClient.tokenIntrospection(
         this.oidcConfiguration,
         token
       );
-      return introspection.active;
+      if (!introspection.active) {
+        throw Error(`Token is not active`);
+      }
+
+      const username =
+        (introspection.preferred_username as string | undefined) ||
+        introspection.username ||
+        introspection.sub;
+
+      return {
+        tokenSet: { access_token: token },
+        identity: {
+          clientId:
+            introspection.client_id ||
+            (introspection.azp as string | undefined) ||
+            "unknown client id",
+          scope: introspection.scope || injector().resolve("oidcScope"),
+          exp: introspection.exp,
+          iat: introspection.iat,
+          username,
+          name: resolveDisplayName(introspection, username),
+        },
+      };
     } catch (e) {
       logger()
-        .child({ token, error: e })
+        .child({ error: unknownToString(e) })
         .error(`Unable to introspect the token`);
-      return false;
+      throw e;
     }
   }
 

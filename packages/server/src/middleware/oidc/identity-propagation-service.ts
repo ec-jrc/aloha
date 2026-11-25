@@ -16,9 +16,13 @@ governing permissions and limitations under the Licence.
 import z from "zod";
 import {
   ClientRegistrationMetadata,
+  IdentitySchema,
   ServerMetadata,
   TokenSet,
+  TokenSetSchema,
 } from "./oidc-support";
+
+import * as openIdClient from "openid-client";
 
 export const IdentityPropagationServiceInfoSchema = z.object({
   provider: z.string(),
@@ -27,12 +31,20 @@ export type IdentityPropagationServiceInfo = z.infer<
   typeof IdentityPropagationServiceInfoSchema
 >;
 
+export const TokenResolutionResultSchema = z.object({
+  identity: IdentitySchema,
+  tokenSet: TokenSetSchema,
+});
+export type TokenResolutionResult = z.infer<
+  typeof TokenResolutionResultSchema
+>;
+
 export interface IdentityPropagationService {
   getServerMetadata(): ServerMetadata;
   getClientRegistration(clientId: string): Promise<ClientRegistrationMetadata>;
-  verifyToken(token: string): Promise<boolean>;
-  refreshTokenSet(tokenSet: TokenSet): Promise<TokenSet>;
+  resolveToken(token: string): Promise<TokenResolutionResult>;
   init(): Promise<void>;
+  getConfiguration(): Promise<openIdClient.Configuration>;
   getInfo(): Promise<IdentityPropagationServiceInfo>;
   tokenExchange(tokenSet: TokenSet, audience: string): Promise<TokenSet>;
   getUsername(tokenSet: TokenSet): Promise<string>;

@@ -1,3 +1,5 @@
+import { CallToolResultSchema } from "@modelcontextprotocol/core";
+
 /*
 Copyright (C) 2025 European Union
 
@@ -12,20 +14,12 @@ the Licence is distributed on an “AS IS” basis, WITHOUT WARRANTIES OR CONDIT
 OF ANY KIND, either express or implied. See the Licence for the specific language
 governing permissions and limitations under the Licence.
 */
-
-import { CallToolResultSchema } from "@modelcontextprotocol/sdk/types.js";
 import {
   MCPServer,
   MCPToolFilterCallable,
   MCPToolFilterStatic,
 } from "@openai/agents";
-import {
-  MessageSendParams,
-  Task,
-  TaskArtifactUpdateEvent,
-  TaskStatusUpdateEvent,
-  Message,
-} from "@a2a-js/sdk";
+import { Role, SendMessageRequest, TaskState } from "@a2a-js/sdk";
 import { endpoints_schemas } from "aloha-shared";
 import { getAgentDetail, sendA2AMessageStream } from "./agents";
 import { getConnectionDetail, sendMCPClientRequest } from "./clients";
@@ -37,7 +31,7 @@ import {
   sendMessageToAgentInstance,
 } from "./testbed-agents";
 import { isWithErrorsObject } from "./utils";
-import { isTextPart } from "@/utils/a2a-utils";
+import { partText } from "@/utils/a2a-utils";
 
 type MCPTools = Awaited<ReturnType<MCPServer["listTools"]>>;
 
@@ -233,13 +227,27 @@ export class AlohaA2AAgentMCPServer implements MCPServer {
 
     console.info(`Calling A2A agent ${this.name} with message: ${query}`);
 
-    const message: MessageSendParams = {
+    const message: SendMessageRequest = {
+      tenant: "",
       message: {
-        kind: "message",
         messageId: crypto.randomUUID(),
-        role: "user",
-        parts: [{ kind: "text", text: query }],
+        contextId: "",
+        taskId: "",
+        role: Role.ROLE_USER,
+        parts: [
+          {
+            content: { $case: "text", value: query },
+            metadata: undefined,
+            filename: "",
+            mediaType: "text/plain",
+          },
+        ],
+        metadata: undefined,
+        extensions: [],
+        referenceTaskIds: [],
       },
+      configuration: undefined,
+      metadata: undefined,
     };
 
     const responseText = await this.collectA2AResponse(message);
@@ -250,7 +258,7 @@ export class AlohaA2AAgentMCPServer implements MCPServer {
   }
 
   private async collectA2AResponse(
-    message: MessageSendParams
+    message: SendMessageRequest
   ): Promise<string> {
     let responseText = "";
     let error: string | null = null;
@@ -264,60 +272,51 @@ export class AlohaA2AAgentMCPServer implements MCPServer {
 
         switch (event.kind) {
           case "task": {
-            const task = event as Task;
+            const task = event.data;
             if (task.status?.message?.parts) {
-              responseText += task.status.message.parts
-                .filter(isTextPart)
-                .map((p) => p.text)
-                .join("");
+              responseText += task.status.message.parts.map(partText).join("");
             }
             if (task.artifacts) {
               for (const artifact of task.artifacts) {
-                responseText += artifact.parts
-                  .filter(isTextPart)
-                  .map((p) => p.text)
-                  .join("");
+                responseText += artifact.parts.map(partText).join("");
               }
             }
             if (this.isTerminalState(task.status?.state)) {
-              if (task.status?.state === "failed") {
+              if (task.status?.state === TaskState.TASK_STATE_FAILED) {
                 error = "A2A agent task failed";
               }
               resolve();
             }
             break;
           }
-          case "status-update": {
-            const statusUpdate = event as TaskStatusUpdateEvent;
+          case "statusUpdate": {
+            const statusUpdate = event.data;
             if (statusUpdate.status?.message?.parts) {
               responseText += statusUpdate.status.message.parts
-                .filter(isTextPart)
-                .map((p) => p.text)
+                .map(partText)
                 .join("");
             }
             if (this.isTerminalState(statusUpdate.status?.state)) {
-              if (statusUpdate.status?.state === "failed") {
+              if (statusUpdate.status?.state === TaskState.TASK_STATE_FAILED) {
                 error = "A2A agent task failed";
               }
               resolve();
             }
             break;
           }
-          case "artifact-update": {
-            const artifactUpdate = event as TaskArtifactUpdateEvent;
-            responseText += artifactUpdate.artifact.parts
-              .filter(isTextPart)
-              .map((p) => p.text)
-              .join("");
+          case "artifactUpdate": {
+            const artifactUpdate = event.data;
+            if (artifactUpdate.artifact) {
+              responseText += artifactUpdate.artifact.parts
+                .map(partText)
+                .join("");
+            }
             break;
           }
           case "message": {
-            const msg = event as Message;
-            if (msg.role === "agent" && msg.parts) {
-              responseText += msg.parts
-                .filter(isTextPart)
-                .map((p) => p.text)
-                .join("");
+            const msg = event.data;
+            if (msg.role === Role.ROLE_AGENT && msg.parts) {
+              responseText += msg.parts.map(partText).join("");
             }
             break;
           }
@@ -345,12 +344,12 @@ export class AlohaA2AAgentMCPServer implements MCPServer {
     return responseText;
   }
 
-  private isTerminalState(state: string | undefined): boolean {
+  private isTerminalState(state: TaskState | undefined): boolean {
     return (
-      state === "completed" ||
-      state === "failed" ||
-      state === "canceled" ||
-      state === "rejected"
+      state === TaskState.TASK_STATE_COMPLETED ||
+      state === TaskState.TASK_STATE_FAILED ||
+      state === TaskState.TASK_STATE_CANCELED ||
+      state === TaskState.TASK_STATE_REJECTED
     );
   }
 }

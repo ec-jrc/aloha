@@ -30,6 +30,17 @@ export async function restartHub() {
   });
 }
 
+export async function getAllowedHttpHeadersOverrides(): Promise<string[]> {
+  const response = await customFetch(
+    "Get allowed HTTP headers overrides",
+    `${apiBaseUrl}/allowed-http-headers-overrides`
+  );
+  const parsed = endpoints_schemas.AllowedHttpHeadersOverridesSchema.parse(
+    await response.json()
+  );
+  return parsed.allowedHttpHeadersOverrides.map((h) => h.toLowerCase());
+}
+
 export interface ChangelogSection {
   title: string;
   items: string[];

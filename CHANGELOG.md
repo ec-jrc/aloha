@@ -1,5 +1,33 @@
 # CHANGELOG
 
+## [4.2.0] - 27 Oct 2026
+
+### Added
+
+- EULogin identity propagation: a dedicated `eu-login-identity-propagation-service` that enables Aloha to work with EULogin, including improved username and family-name extraction
+- Custom HTTP headers for Streamable HTTP connections: configurable header passthrough with OpenShift customization via an HTTP-overrides environment variable
+- EULogin token resolution is cached so the same token can be reused across tool calls
+
+### Changed
+
+- Migrated to the MCP SDK 2.0 split packages (`@modelcontextprotocol/{core,client,server,node,express}`) across the server, client, and aloha-shared packages, with matching test updates
+- Migrated the A2A integration to SDK 1.2.0
+- Removed the Aloha proxy against the IDP
+- Identity propagation reworked: `verifyToken` now returns an `Identity` and `TokenSet`, refresh tokens are stored to support identity propagation, and a token exchange is performed from cache or auth info when invoking a tool
+- `clientSecret` is now optional
+- Deduplicated log lines
+- Hardened the test environment: hermetic `tests/.env.test` isolation, `setup`/`db-setup` moved to `.cjs`, and a pretest bootstrap so runs no longer depend on the developer's local `.env`
+
+### Fixed
+
+- Fixed a JsonEditor crash
+- Fixed dialog form value reset and default state management
+- Fixed a close-detection bug introduced by the new MCP SDK raising on transport/connection close
+- Always set the creator on update
+- Fixed an agent credential encryption bug and a list-tool race condition
+- Fixed Keycloak username extraction
+- Optimized invoke/discover tools for the hub
+
 ## [4.1.0] - 15 Jul 2026
 
 ### Added

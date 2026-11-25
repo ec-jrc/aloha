@@ -15,13 +15,20 @@ governing permissions and limitations under the Licence.
 import {
   Artifact,
   Message,
-  MessageSendParams,
+  Role,
+  SendMessageRequest,
   Task,
   TaskArtifactUpdateEvent,
   TaskState,
   TaskStatusUpdateEvent,
 } from "@a2a-js/sdk";
-import { isTextPart } from "./a2a-utils";
+import { partText } from "./a2a-utils";
+
+export type A2AAgentExecutionEvent =
+  | { kind: "message"; data: Message }
+  | { kind: "task"; data: Task }
+  | { kind: "statusUpdate"; data: TaskStatusUpdateEvent }
+  | { kind: "artifactUpdate"; data: TaskArtifactUpdateEvent };
 
 type A2ADisplayBaseEvent = {
   id: string;
@@ -72,25 +79,32 @@ export type A2ADisplayEvent =
   | A2AArtifactUpdatedDisplayEvent
   | A2AErrorDisplayEvent;
 
-export type RawA2AEvent =
-  | Task
-  | Message
-  | MessageSendParams
-  | TaskStatusUpdateEvent
-  | TaskArtifactUpdateEvent;
+export type RawA2AEvent = A2AAgentExecutionEvent | SendMessageRequest;
 
 export type RawEventWithType = RawA2AEvent & {
   type: "user_message" | "agent_message" | "error_message";
 };
 
-function isTaskDisplayEventStreaming(a2aEvent: Task | TaskStatusUpdateEvent) {
-  return !(
-    a2aEvent.status.state === "completed" ||
-    a2aEvent.status.state === "failed" ||
-    a2aEvent.status.state === "canceled" ||
-    a2aEvent.status.state === "rejected" ||
-    a2aEvent.status.state === "input-required"
-  );
+const NON_STREAMING_STATES: ReadonlySet<TaskState> = new Set([
+  TaskState.TASK_STATE_COMPLETED,
+  TaskState.TASK_STATE_FAILED,
+  TaskState.TASK_STATE_CANCELED,
+  TaskState.TASK_STATE_REJECTED,
+  TaskState.TASK_STATE_INPUT_REQUIRED,
+]);
+
+function isTaskDisplayEventStreaming(status: TaskState | undefined): boolean {
+  return status === undefined || !NON_STREAMING_STATES.has(status);
+}
+
+function extractText(parts: { content?: unknown }[] | undefined): string {
+  if (!parts) {
+    return "";
+  }
+  return (parts as Parameters<typeof partText>[0][])
+    .map(partText)
+    .filter(Boolean)
+    .join("");
 }
 
 function getTaskDisplayEventIndex(
@@ -103,7 +117,8 @@ function getTaskDisplayEventIndex(
   );
   const searchStart = lastUserMsgIndex >= 0 ? lastUserMsgIndex + 1 : 0;
   return displayEvents.findIndex(
-    (e, i) => i >= searchStart && e.type === "task_status" && e.taskId === taskId
+    (e, i) =>
+      i >= searchStart && e.type === "task_status" && e.taskId === taskId
   );
 }
 
@@ -117,12 +132,11 @@ export function transformA2AEvents(
 
     // User messages
     if (event.type === "user_message" && "message" in event) {
-      const msgEvent = event as MessageSendParams;
-      const textParts = msgEvent.message.parts.filter(isTextPart);
-      const content = textParts.map((p) => p.text).join("\n");
+      const msgEvent = event as SendMessageRequest;
+      const content = extractText(msgEvent.message?.parts);
 
       displayEvents.push({
-        id: msgEvent.message.messageId || crypto.randomUUID(),
+        id: msgEvent.message?.messageId || crypto.randomUUID(),
         timestamp,
         type: "user_message",
         content,
@@ -132,17 +146,14 @@ export function transformA2AEvents(
     }
 
     // Agent messages - accumulate streaming text
-    if (event.type === "agent_message") {
+    if (event.type === "agent_message" && "kind" in event) {
       // Task event
-      if ("kind" in event && event.kind === "task") {
-        const task = event as Task;
+      if (event.kind === "task") {
+        const task = event.data;
 
         // Add task status
-        const statusMessage = task.status.message
-          ? task.status.message.parts
-              .filter(isTextPart)
-              .map((p) => p.text)
-              .join("\n")
+        const statusMessage = task.status?.message
+          ? extractText(task.status.message.parts)
           : undefined;
 
         // Check if last event is same status - if so, update it instead of adding new
@@ -166,19 +177,19 @@ export function transformA2AEvents(
             message: combinedMessage || undefined,
             timestamp, // Update to latest timestamp
             rawEvents: [...(taskStatusEvent.rawEvents || []), event],
-            streaming: isTaskDisplayEventStreaming(task),
-            status: task.status.state as TaskState,
+            streaming: isTaskDisplayEventStreaming(task.status?.state),
+            status: task.status?.state ?? TaskState.TASK_STATE_UNSPECIFIED,
           };
         } else {
           displayEvents.push({
             id: crypto.randomUUID(),
             timestamp,
             type: "task_status",
-            status: task.status.state as TaskState,
+            status: task.status?.state ?? TaskState.TASK_STATE_UNSPECIFIED,
             message: statusMessage,
             taskId: task.id,
             rawEvents: [event],
-            streaming: isTaskDisplayEventStreaming(task),
+            streaming: isTaskDisplayEventStreaming(task.status?.state),
           } as A2ATaskStatusDisplayEvent);
         }
 
@@ -193,31 +204,12 @@ export function transformA2AEvents(
             rawEvents: [event],
           });
         }
-
-        // Extract text from task history
-        // if (task.history && task.history.length > 0) {
-        //   const lastMessage = task.history[task.history.length - 1];
-        //   if (lastMessage.role === "agent") {
-        //     const textParts = lastMessage.parts.filter(isTextPart);
-        //     const content = textParts.map((p) => p.text).join("\n");
-        //     if (content) {
-        //       displayEvents.push({
-        //         id: lastMessage.messageId || crypto.randomUUID(),
-        //         timestamp,
-        //         type: "agent_message",
-        //         content,
-        //         rawEvents: [event],
-        //       });
-        //     }
-        //   }
-        // }
       }
       // Message event
-      else if ("kind" in event && event.kind === "message") {
-        const message = event as Message;
-        if (message.role === "agent") {
-          const textParts = message.parts.filter(isTextPart);
-          const content = textParts.map((p) => p.text).join("\n");
+      else if (event.kind === "message") {
+        const message = event.data;
+        if (message.role === Role.ROLE_AGENT) {
+          const content = extractText(message.parts);
 
           if (content) {
             displayEvents.push({
@@ -232,14 +224,11 @@ export function transformA2AEvents(
       }
 
       // TaskStatusUpdateEvent
-      else if ("kind" in event && event.kind === "status-update") {
-        const statusUpdate = event as TaskStatusUpdateEvent;
+      else if (event.kind === "statusUpdate") {
+        const statusUpdate = event.data;
 
-        const statusMessage = statusUpdate.status.message
-          ? statusUpdate.status.message.parts
-              .filter(isTextPart)
-              .map((p) => p.text)
-              .join("")
+        const statusMessage = statusUpdate.status?.message
+          ? extractText(statusUpdate.status.message.parts)
           : undefined;
 
         // Check if last event is same status - if so, update it instead of adding new
@@ -261,8 +250,9 @@ export function transformA2AEvents(
             message: combinedMessage || undefined,
             timestamp, // Update to latest timestamp
             rawEvents: [...(lastEvent.rawEvents || []), event],
-            streaming: isTaskDisplayEventStreaming(statusUpdate),
-            status: statusUpdate.status.state as TaskState,
+            streaming: isTaskDisplayEventStreaming(statusUpdate.status?.state),
+            status:
+              statusUpdate.status?.state ?? TaskState.TASK_STATE_UNSPECIFIED,
           };
         } else {
           console.warn("Task status update event without previous task", event);
@@ -270,26 +260,29 @@ export function transformA2AEvents(
             id: crypto.randomUUID(),
             timestamp,
             type: "task_status",
-            status: statusUpdate.status.state,
+            status:
+              statusUpdate.status?.state ?? TaskState.TASK_STATE_UNSPECIFIED,
             message: statusMessage,
             taskId: statusUpdate.taskId,
             rawEvents: [event],
-            streaming: isTaskDisplayEventStreaming(statusUpdate),
+            streaming: isTaskDisplayEventStreaming(statusUpdate.status?.state),
           });
         }
       }
 
       // TaskArtifactUpdateEvent
-      else if ("kind" in event && event.kind === "artifact-update") {
-        const artifactUpdate = event as TaskArtifactUpdateEvent;
-        displayEvents.push({
-          id: crypto.randomUUID(),
-          timestamp,
-          type: "artifact_updated",
-          artifact: artifactUpdate.artifact,
-          taskId: artifactUpdate.taskId,
-          rawEvents: [event],
-        });
+      else if (event.kind === "artifactUpdate") {
+        const artifactUpdate = event.data;
+        if (artifactUpdate.artifact) {
+          displayEvents.push({
+            id: crypto.randomUUID(),
+            timestamp,
+            type: "artifact_updated",
+            artifact: artifactUpdate.artifact,
+            taskId: artifactUpdate.taskId,
+            rawEvents: [event],
+          });
+        }
       }
     }
 
@@ -299,9 +292,7 @@ export function transformA2AEvents(
       const message =
         (typeof rawEvent.data === "string" && rawEvent.data) ||
         "An error occurred" +
-          (rawEvent.responseCode
-            ? ` (status ${rawEvent.responseCode})`
-            : "");
+          (rawEvent.responseCode ? ` (status ${rawEvent.responseCode})` : "");
       displayEvents.push({
         id: crypto.randomUUID(),
         timestamp,

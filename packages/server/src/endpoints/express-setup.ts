@@ -25,7 +25,6 @@ import { getAuthPlugins, setAuthPlugins } from "../middleware/authorise";
 import jwtAuthenticationStrategy from "../middleware/jwt-authentication";
 import noAuthenticationStrategy from "../middleware/no-authentication";
 import oidcAuthentication from "../middleware/oidc-authentication";
-import { setupOptionalOAuthProxy } from "../middleware/oidc/oidc-support";
 import { agentRoutes } from "./agents";
 import { clientsRoutes } from "./clients";
 import { hubRouter } from "./hub";
@@ -98,7 +97,7 @@ async function loadAuthPlugins(): Promise<
       }
     } catch (error: unknown) {
       log.error(error);
-      throw new Error(`Failed to load auth plugin`);
+      throw new Error(`Failed to load auth plugin`, { cause: error });
     }
   }
   return plugins;
@@ -169,8 +168,6 @@ export async function expressSetup() {
   setAuthPlugins([...getAuthPlugins(), ...standardPlugins]);
 
   app.use(cookie_parser());
-
-  await setupOptionalOAuthProxy(app);
 
   // Apply authentication middlewares
   const log = logger();

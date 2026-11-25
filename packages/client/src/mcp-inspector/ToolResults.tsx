@@ -1,10 +1,7 @@
 import JsonView from "./JsonView";
 import ResourceLinkView from "./ResourceLinkView";
-import {
-  CallToolResultSchema,
-  CompatibilityCallToolResult,
-  Tool,
-} from "@modelcontextprotocol/sdk/types.js";
+import { CompatibilityCallToolResult, Tool } from "@modelcontextprotocol/client";
+import { CallToolResultSchema } from "@modelcontextprotocol/core";
 import { validateToolOutput, hasOutputSchema } from "@/utils/schemaUtils";
 
 interface ToolResultsProps {
@@ -184,7 +181,7 @@ const ToolResults = ({
           )}
         {structuredResult.content.length > 0 && (
           <div className="mb-4">
-            {structuredResult.structuredContent && (
+            {structuredResult.structuredContent !== undefined && (
               <>
                 <h5 className="font-semibold mb-2 text-sm">
                   Unstructured Content:

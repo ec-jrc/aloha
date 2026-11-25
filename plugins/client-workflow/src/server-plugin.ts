@@ -23,6 +23,7 @@ import {
 } from "@aloha-plugins/definitions/plugins-types";
 
 import {
+  getPluginExtra,
   getPluginExtraWithDefault,
   setPluginExtra,
 } from "@aloha-plugins/plugins-utils";
@@ -157,7 +158,11 @@ export default class PluginWorkflowClient implements PluginWorkflow {
         return;
       }
 
-      const extra = getPluginExtraWithDefault(this, item, { state: "DRAFT" });
+      const extra = getPluginExtraWithDefault(
+        this,
+        item,
+        this.getDefaultPluginExtra()
+      );
       res.json({ ...extra }).end();
     });
 
@@ -217,6 +222,11 @@ export default class PluginWorkflowClient implements PluginWorkflow {
       setPluginExtra(this, item, body);
 
       try {
+        if (body.state === "DRAFT") {
+          if (item.visibility !== schemas.Visibility.Private) {
+            throw new Error(`State DRAFT requires Private visibility`);
+          }
+        }
         this.logger()
           .child({ id, type, extras: item.extras })
           .debug("Extras to save");
@@ -242,8 +252,12 @@ export default class PluginWorkflowClient implements PluginWorkflow {
 
   private getRepositoryByType(type: ItemType) {
     return type === "client"
-      ? this.extendedAlohaInjector.resolve("connectionOptionsRepository")
-      : this.extendedAlohaInjector.resolve("agentRepository");
+      ? this.runtimeInjector
+          .resolve("alohaInjector")
+          .resolve("connectionOptionsRepository")
+      : this.runtimeInjector
+          .resolve("alohaInjector")
+          .resolve("agentRepository");
   }
 
   private decorateVisibilityInterface(
@@ -259,7 +273,9 @@ export default class PluginWorkflowClient implements PluginWorkflow {
       const userInfo = await runtimeInjector.resolve("getUserInfo")();
       const log = this.logger().child({ userInfo });
 
-      const itemToCheck = await this.createItemToCheck(impl, id, undefined);
+      const itemToCheck = await this.createItemToCheck(impl, id, {
+        projects: visibility.projects,
+      });
 
       log
         .child({ extras: itemToCheck.extras })
@@ -267,7 +283,8 @@ export default class PluginWorkflowClient implements PluginWorkflow {
 
       const itemExtra = getPluginExtraWithDefault(
         this,
-        itemToCheck
+        itemToCheck,
+        this.getDefaultPluginExtra()
       ) as ClientWorkflowPluginExtra;
 
       const itemVisibility =
@@ -310,12 +327,15 @@ export default class PluginWorkflowClient implements PluginWorkflow {
       return res;
     };
   }
-
-  private setDefaultPluginExtra(item: schemas.ObjectWithExtras) {
+  private getDefaultPluginExtra() {
     const defaultExtra: ClientWorkflowPluginExtra = {
       state: "DRAFT",
     };
+    return defaultExtra;
+  }
 
+  private setDefaultPluginExtra(item: schemas.ObjectWithExtras) {
+    const defaultExtra = this.getDefaultPluginExtra();
     setPluginExtra(this, item, defaultExtra);
 
     return true;
@@ -374,13 +394,22 @@ export default class PluginWorkflowClient implements PluginWorkflow {
   private async createItemToCheck(
     impl: RepositoryForObjectWithExtras,
     id: string,
-    item: schemas.ObjectWithExtras | undefined
+    item: (schemas.ObjectWithExtras & { projects?: string[] }) | undefined
   ) {
     const itemFromDb = await impl.findById(id);
 
-    if (item !== undefined) {
-      const extrasFromItemToSave = getPluginExtraWithDefault(this, item, {});
-      setPluginExtra(this, itemFromDb, extrasFromItemToSave);
+    const extraFromDB = getPluginExtra(this, itemFromDb);
+    const extraFromItem = getPluginExtra(this, item);
+
+    if (extraFromItem) {
+      // user want to set extra
+      setPluginExtra(this, itemFromDb, extraFromItem);
+    } else if (!extraFromDB) {
+      setPluginExtra(this, itemFromDb, this.getDefaultPluginExtra());
+    }
+
+    if (item.projects) {
+      itemFromDb.projects = item.projects;
     }
     return itemFromDb;
   }
@@ -392,17 +421,29 @@ export default class PluginWorkflowClient implements PluginWorkflow {
     userInfo: PluginUserInfo,
     log: slogger.Logger
   ) {
+    log
+      .child({
+        itemExtra,
+        visibility,
+        projects,
+      })
+      .debug("Check Permission to proceed");
     if (
       itemExtra.state === "DRAFT" &&
       visibility === schemas.Visibility.Managed
     ) {
       const loggedUserProjects = userInfo.loggedUser.projects || [];
-      if (projects.find((p) => !loggedUserProjects.includes(p))) {
-        log.debug(
-          "User specified a project in the client that not belong to its projects"
-        );
+      const notMyProject = projects.find(
+        (p) => !loggedUserProjects.includes(p)
+      );
+      if (notMyProject) {
+        log
+          .child({ project: notMyProject })
+          .debug(
+            "User specified a project in the client that not belong to its projects"
+          );
         throw new Error(
-          `Only user projects can be specified when setting visibility to managed`
+          `In DRAFT status, only user projects can be specified when setting visibility to managed`
         );
       }
     }
@@ -418,24 +459,24 @@ export default class PluginWorkflowClient implements PluginWorkflow {
       throw new Error(`Draft clients cannot be public`);
     }
 
-    const userPermissions = userInfo.loggedUser.permissions || [];
-
-    if (
-      itemExtra.state !== "DRAFT" &&
-      !userPermissions.includes(
-        authentication_strategy.Permissions.ManageWorkflows
-      ) /* disabled for testing  &&
-    !userPermissions.includes(
-      authentication_strategy.Permissions.Administration
-    )*/
-    ) {
-      log.info(
-        "User has no rights to change the state to something different from Draft"
-      );
-
-      throw new Error(
-        `You don't have the right to set a state that it's not Draft`
-      );
-    }
+    // const userPermissions = userInfo.loggedUser.permissions || [];
+    //
+    // if (
+    //   itemExtra.state !== "DRAFT" &&
+    //   !userPermissions.includes(
+    //     authentication_strategy.Permissions.ManageWorkflows
+    //   ) /* disabled for testing  &&
+    // !userPermissions.includes(
+    //   authentication_strategy.Permissions.Administration
+    // )*/
+    // ) {
+    //   log.info(
+    //     "User has no rights to change the state to something different from Draft"
+    //   );
+    //
+    //   throw new Error(
+    //     `You don't have the right to set a state that it's not Draft`
+    //   );
+    // }
   }
 }

@@ -1,6 +1,6 @@
 {
   "name": "aloha",
-  "version": "3.0.0",
+  "version": "4.2.0",
   "description": "AI Logical Orchestrator Hub for Agents",
   "private": true,
   "devDependencies": {

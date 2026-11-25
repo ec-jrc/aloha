@@ -1,6 +1,6 @@
 /*
 Copyright (C) 2025 European Union
- 
+
 Licensed under the EUPL, Version 1.2 or – as soon they will be approved by the
 European Commission – subsequent versions of the EUPL (the "Licence");
 You may not use this work except in compliance with the Licence.
@@ -13,18 +13,13 @@ OF ANY KIND, either express or implied. See the Licence for the specific languag
 governing permissions and limitations under the Licence.
 */
 
-const Module = require("module");
+const fs = require("fs");
+const path = require("path");
 
-const originalResolveFilename = Module._resolveFilename;
+const envTestPath = path.join(__dirname, ".env.test");
 
-Module._resolveFilename = function (request, parent, isMain, options) {
-  if (request.endsWith('.js') && !request.includes('node_modules')) {
-    const tsRequest = request.replace(/\.js$/, '.ts');
-    try {
-      return originalResolveFilename.call(this, tsRequest, parent, isMain, options);
-    } catch {
-      // Fall back to original if .ts doesn't exist
-    }
-  }
-  return originalResolveFilename.call(this, request, parent, isMain, options);
-};
+if (!fs.existsSync(envTestPath)) {
+  const examplePath = path.join(__dirname, "env.test.example");
+  fs.copyFileSync(examplePath, envTestPath);
+  console.log("[pretest] created tests/.env.test from tests/.env.test.example");
+}

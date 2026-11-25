@@ -51,7 +51,7 @@ import {
 } from "@/utils/a2a-event-transformer";
 import { isA2AAgent } from "@/utils/a2a-utils";
 import { exceptionToMessage, isDefined } from "@/utils/type-utils";
-import { MessageSendParams } from "@a2a-js/sdk";
+import { Role, SendMessageRequest } from "@a2a-js/sdk";
 import { ExclamationTriangleIcon, TrashIcon } from "@heroicons/react/16/solid";
 import { PaperAirplaneIcon, StopIcon } from "@heroicons/react/24/solid";
 import { authentication_strategy, schemas } from "aloha-shared";
@@ -248,13 +248,27 @@ export default function AgentDetailPage() {
         message
       ) {
         try {
-          const messageToSend: MessageSendParams = {
+          const messageToSend: SendMessageRequest = {
+            tenant: "",
             message: {
-              kind: "message",
-              role: "user",
               messageId: uuidv4(),
-              parts: [{ kind: "text", text: message }],
+              contextId: "",
+              taskId: "",
+              role: Role.ROLE_USER,
+              parts: [
+                {
+                  content: { $case: "text", value: message },
+                  metadata: undefined,
+                  filename: "",
+                  mediaType: "text/plain",
+                },
+              ],
+              metadata: undefined,
+              extensions: [],
+              referenceTaskIds: [],
             },
+            configuration: undefined,
+            metadata: undefined,
           };
 
           updateEvents(messageToSend, "user_message");
@@ -266,12 +280,12 @@ export default function AgentDetailPage() {
               console.log("Received response:", event);
               switch (event.kind) {
                 case "task":
-                  setTaskId(event.id);
+                  setTaskId(event.data.id);
                   updateEvents(event, "agent_message");
                   break;
                 case "message":
-                case "status-update":
-                case "artifact-update":
+                case "statusUpdate":
+                case "artifactUpdate":
                   updateEvents(event, "agent_message");
                   break;
                 case "error":
@@ -293,7 +307,10 @@ export default function AgentDetailPage() {
         } catch (err) {
           console.error(err);
           updateEvents(
-            { kind: "error", data: String(err) } as unknown as RawA2AEvent,
+            {
+              kind: "error",
+              data: String(err),
+            } as unknown as RawA2AEvent,
             "error_message"
           );
           setIsGenerating(false);

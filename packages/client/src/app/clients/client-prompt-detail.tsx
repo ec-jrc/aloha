@@ -30,15 +30,9 @@ import { useCompletionState } from "@/hooks/use-completion-state";
 import JsonView from "@/mcp-inspector/JsonView";
 import { sendMCPClientRequest } from "@/services/clients";
 import { exceptionToMessage } from "@/utils/type-utils";
+import { GetPromptResult, Prompt, PromptReference, ResourceTemplateReference } from "@modelcontextprotocol/client";
+import { CompleteResultSchema, GetPromptResultSchema } from "@modelcontextprotocol/core";
 import { DocumentTextIcon } from "@heroicons/react/24/solid";
-import {
-  CompleteResultSchema,
-  GetPromptResult,
-  GetPromptResultSchema,
-  Prompt,
-  PromptReference,
-  ResourceReference,
-} from "@modelcontextprotocol/sdk/types.js";
 import { useCallback, useMemo, useState } from "react";
 
 type Props = {
@@ -64,7 +58,7 @@ export default function MCPClientPromptDetail({
 
   const handleCompletion = useCallback(
     async (
-      ref: ResourceReference | PromptReference,
+      ref: ResourceTemplateReference | PromptReference,
       argName: string,
       value: string
     ): Promise<string[]> => {

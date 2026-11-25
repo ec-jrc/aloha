@@ -14,6 +14,12 @@ governing permissions and limitations under the Licence.
 */
 
 import { Button } from "@/components/ui/button";
+import AllowedHttpHeadersField from "@/components/allowed-http-headers-field";
+import { getAllowedHttpHeadersOverrides } from "@/services/hub";
+import {
+  headerRowsToObject,
+  headersObjectToRows,
+} from "@/utils/http-headers-utils";
 import {
   Dialog,
   DialogContent,
@@ -62,9 +68,20 @@ import { useForm, useWatch } from "react-hook-form";
 import { toast } from "sonner";
 
 const AgentOptionsWithTagStringSchema =
-  endpoints_schemas.AgentCreateSchema.merge(
+  endpoints_schemas.AgentCreateSchema.omit({
+    allowedHttpHeaders: true,
+  }).merge(
     z.object({
       tags: z.string(),
+      allowedHttpHeaders: z
+        .array(
+          z.object({
+            key: z.string(),
+            value: z.string(),
+            override: z.boolean(),
+          })
+        )
+        .optional(),
     })
   );
 type AgentOptionsWithTagString = z.infer<
@@ -92,12 +109,19 @@ export default function AgentEditDialog({
     authentication: {
       type: "none",
     },
+    allowedHttpHeaders: [],
     connections: [],
     projects: [],
     type: "agent",
   });
 
   const [dialogOpen, setDialogOpen] = useState<boolean>(false);
+
+  const [, allowedHttpHeadersOverrides] = useService(
+    async () => await getAllowedHttpHeadersOverrides(),
+    [dialogOpen],
+    []
+  );
 
   useEffect(() => {
     async function loadServerData() {
@@ -114,6 +138,10 @@ export default function AgentEditDialog({
           projects: serverData.projects,
           description: serverData.description,
           tags: serverData.tags?.join(", ") || "",
+          allowedHttpHeaders: headersObjectToRows(
+            serverData.allowedHttpHeaders,
+            allowedHttpHeadersOverrides
+          ),
           visibility: serverData.visibility || schemas.Visibility.Private,
           type: "agent",
         } as AgentOptionsWithTagString);
@@ -122,7 +150,7 @@ export default function AgentEditDialog({
     }
 
     void loadServerData();
-  }, [serverId, dialogOpen]);
+  }, [serverId, dialogOpen, allowedHttpHeadersOverrides]);
 
   const [loadingOIDCRegistration, registration] = useService(
     async () => {
@@ -140,6 +168,8 @@ export default function AgentEditDialog({
     [server, dialogOpen, serverId],
     null
   );
+  const oidcFieldsDisabled = registration?.registered !== false;
+
   const form = useForm({
     resolver: zodResolver(AgentOptionsWithTagStringSchema),
     values: server,
@@ -152,6 +182,7 @@ export default function AgentEditDialog({
         .split(",")
         .filter((t) => !!t)
         .map((t) => t.trim()),
+      allowedHttpHeaders: headerRowsToObject(values.allowedHttpHeaders),
     };
 
     try {
@@ -175,6 +206,11 @@ export default function AgentEditDialog({
   }
 
   const authentication = useWatch({ control: form.control, name: "authentication" });
+
+  const serverProtocol = useWatch({
+    control: form.control,
+    name: "serverProtocol",
+  });
 
   return (
     <Dialog open={dialogOpen} onOpenChange={(open) => setDialogOpen(open)}>
@@ -264,7 +300,9 @@ export default function AgentEditDialog({
                             <SelectItem value="http">
                               Streamable HTTP
                             </SelectItem>
+                            {/* [SSE-SUPPORT-REMOVED] restore the legacy SSE protocol option
                             <SelectItem value="sse">SSE (legacy)</SelectItem>
+                            */}
                           </SelectContent>
                         </Select>
                         <FormDescription>
@@ -411,7 +449,7 @@ export default function AgentEditDialog({
                                   disabled={registration?.registered === true}
                                 />
                                 <Button
-                                  disabled={registration?.registered === true}
+                                  disabled={oidcFieldsDisabled}
                                   type="button"
                                   onClick={() =>
                                     field.onChange(generateRandomString())
@@ -442,10 +480,10 @@ export default function AgentEditDialog({
                                 <Input
                                   {...field}
                                   className="mr-2"
-                                  disabled={registration?.registered === true}
+                                  disabled={oidcFieldsDisabled}
                                 />
                                 <Button
-                                  disabled={registration?.registered === true}
+                                  disabled={oidcFieldsDisabled}
                                   type="button"
                                   onClick={() =>
                                     field.onChange(generateRandomString())
@@ -467,6 +505,7 @@ export default function AgentEditDialog({
                       />
                     </div>
                   )}
+
                 <FormField
                   control={form.control}
                   name="tags"
@@ -485,6 +524,15 @@ export default function AgentEditDialog({
                     );
                   }}
                 />
+
+                {serverProtocol === "http" && (
+                  <AllowedHttpHeadersField
+                    control={form.control}
+                    name="allowedHttpHeaders"
+                    overridesWhitelist={allowedHttpHeadersOverrides}
+                    description="Custom HTTP headers sent with every request to the agent over the Streamable HTTP transport."
+                  />
+                )}
 
                 <DialogFooter className="justify-end">
                   <Button

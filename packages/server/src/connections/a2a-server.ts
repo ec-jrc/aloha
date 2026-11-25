@@ -13,7 +13,7 @@ OF ANY KIND, either express or implied. See the Licence for the specific languag
 governing permissions and limitations under the Licence.
 */
 
-import { AGENT_CARD_PATH } from "@a2a-js/sdk";
+import { AGENT_CARD_PATH, A2A_PROTOCOL_VERSION, AgentCard } from "@a2a-js/sdk";
 import {
   AgentExecutor,
   DefaultRequestHandler,
@@ -86,16 +86,33 @@ export class A2AServer {
       res: express.Response
     ) => {
       const url = `${req.protocol}://${req.host}`;
-      return res.json({
+      const jsonRpcUrl = `${url}${basePathToServe}/jsonrpc`;
+      const restUrl = `${url}${basePathToServe}/rest`;
+      const dynamicCard: AgentCard = {
         ...agentCard,
-        preferredTransport: "JSONRPC",
-        url: `${url}${basePathToServe}/jsonrpc`,
-        additionalInterfaces: [
-          { url: `${url}${basePathToServe}/jsonrpc`, transport: "JSONRPC" },
-          { url: `${url}${basePathToServe}/rest`, transport: "HTTP+JSON" },
+        supportedInterfaces: [
+          {
+            url: jsonRpcUrl,
+            protocolBinding: "JSONRPC",
+            tenant: "",
+            protocolVersion: A2A_PROTOCOL_VERSION,
+          },
+          {
+            url: restUrl,
+            protocolBinding: "HTTP+JSON",
+            tenant: "",
+            protocolVersion: A2A_PROTOCOL_VERSION,
+          },
         ],
-        capabilities: { ...agentCard.capabilities, pushNotifications: false },
-      });
+        capabilities: {
+          ...(agentCard.capabilities ?? {
+            streaming: false,
+            extensions: [],
+          }),
+          pushNotifications: false,
+        },
+      };
+      return res.json(dynamicCard);
     };
 
     const userBuilder: UserBuilder =

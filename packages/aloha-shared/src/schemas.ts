@@ -46,7 +46,7 @@ export const AuthenticationSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("oidc_client_secret"),
     clientId: z.string().min(1, "OIDC Client Id cannot be blank"),
-    clientSecret: z.string(),
+    clientSecret: z.string().optional(),
   }),
 ]);
 export type Authentication = z.infer<typeof AuthenticationSchema>;
@@ -78,6 +78,12 @@ export const ObjectWithExtrasSchema = z.object({
 });
 export type ObjectWithExtras = z.infer<typeof ObjectWithExtrasSchema>;
 
+export const AllowedHttpHeaderSchema = z.object({
+  value: z.string(),
+  override: z.boolean().default(false),
+});
+export type AllowedHttpHeader = z.infer<typeof AllowedHttpHeaderSchema>;
+
 export const MCPBaseConnectionSchema = VisibilitySchema.merge(
   z.object({
     name: z.string().min(1, "Name is required"),
@@ -87,12 +93,16 @@ export const MCPBaseConnectionSchema = VisibilitySchema.merge(
       error: "Server protocol must be 'http', 'sse' or 'websocket'",
     }),
     authentication: AuthenticationSchema.optional(),
+    allowedHttpHeaders: z
+      .record(z.string().min(1), AllowedHttpHeaderSchema)
+      .optional(),
     type: z.string(),
     lastOnlineAt: z.coerce.date().optional(),
     lastOfflineAt: z.coerce.date().optional(),
     versioningInfo: VersioningInfoSchema.optional(),
   })
 ).merge(ObjectWithExtrasSchema);
+
 export type MCPBaseConnection = z.infer<typeof MCPBaseConnectionSchema>;
 
 export const MCPBaseConnectionWithIdSchema = WithIdBaseSchema.and(

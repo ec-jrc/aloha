@@ -18,7 +18,7 @@ import tseslint from "typescript-eslint";
 
 export default tseslint.config(
   {
-    ignores: ["dist/**", "eslint.config.js", "tests/**", "coverage/**"],
+    ignores: ["dist/**", "eslint.config.js", "tests/**", "coverage/**", "scripts/**", "database/**"],
   },
   eslint.configs.recommended,
   tseslint.configs.recommendedTypeChecked,

@@ -113,6 +113,18 @@ export class PostgreSQLAgentRepository
             this.serverSecret
           );
           break;
+        case "oidc_client_secret":
+          e.authentication.clientId = fun(
+            e.authentication.clientId,
+            this.serverSecret
+          );
+          if (e.authentication.clientSecret) {
+            e.authentication.clientSecret = fun(
+              e.authentication.clientSecret,
+              this.serverSecret
+            );
+          }
+          break;
       }
     }
     return e;

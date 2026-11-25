@@ -13,8 +13,8 @@ OF ANY KIND, either express or implied. See the Licence for the specific languag
 governing permissions and limitations under the Licence.
 */
 
-import { RawA2AEvent } from "@/utils/a2a-event-transformer";
-import { MessageSendParams } from "@a2a-js/sdk";
+import { A2AAgentExecutionEvent } from "@/utils/a2a-event-transformer";
+import { SendMessageRequest } from "@a2a-js/sdk";
 import { endpoints_schemas, schemas } from "aloha-shared";
 import { AgentDetail } from "node_modules/aloha-shared/dist/endpoints-schemas";
 import { SSE } from "sse.js";
@@ -142,10 +142,10 @@ export async function cancelA2AStream(
 }
 export async function sendA2AMessageStream(
   agentDetail: AgentDetail,
-  message: MessageSendParams,
+  message: SendMessageRequest,
   callback: (
     event:
-      | Exclude<RawA2AEvent, MessageSendParams>
+      | A2AAgentExecutionEvent
       | { kind: "error"; responseCode: number; data: unknown; final: true }
       | { kind: "closed"; final: true }
   ) => Promise<void>
@@ -197,16 +197,15 @@ export async function sendA2AMessageStream(
 
 export function isA2AMessageSendParams(
   value: unknown
-): value is MessageSendParams {
+): value is SendMessageRequest {
   return (
     !!value &&
     typeof value === "object" &&
     "message" in value &&
     !!value.message &&
     typeof value.message === "object" &&
-    "kind" in value.message &&
-    !!value.message.kind &&
-    value.message.kind === "message"
+    "parts" in value.message &&
+    Array.isArray(value.message.parts)
   );
 }
 
@@ -238,5 +237,5 @@ export async function isAgentRegisteredWithIdentityPropagationService(
     `${apiAgentUrl}/${id}/isRegisteredInIdentityPropagationService`
   );
   const data = await response.json();
-  return z.object({ registered: z.boolean() }).parse(data);
+  return z.object({ registered: z.boolean().optional() }).parse(data);
 }

@@ -1,5 +1,9 @@
 import { useState, useEffect } from "react";
-import Editor from "react-simple-code-editor";
+import EditorImport from "react-simple-code-editor";
+// Handle CJS interop - the module may be wrapped as { default: Editor }
+const Editor =
+  (EditorImport as unknown as { default: typeof EditorImport }).default ||
+  EditorImport;
 import Prism from "prismjs";
 import "prismjs/components/prism-json";
 import "prismjs/themes/prism.css";

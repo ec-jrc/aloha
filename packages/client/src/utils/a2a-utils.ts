@@ -14,7 +14,7 @@ governing permissions and limitations under the Licence.
 */
 
 import { isWithErrorsObject, WithErrors } from "@/services/utils";
-import { Part, TextPart } from "@a2a-js/sdk";
+import { Part } from "@a2a-js/sdk";
 import { endpoints_schemas, schemas } from "aloha-shared";
 
 export function isA2AAgent<
@@ -32,6 +32,14 @@ export function isA2AAgent<
   );
 }
 
+export type TextPart = Part & {
+  content: { $case: "text"; value: string };
+};
+
 export function isTextPart(p: Part): p is TextPart {
-  return p.kind === "text";
+  return p.content?.$case === "text";
+}
+
+export function partText(p: Part): string {
+  return p.content?.$case === "text" ? p.content.value : "";
 }

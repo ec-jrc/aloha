@@ -1,3 +1,18 @@
+// [SSE-SUPPORT-REMOVED] Outbound SSE client transport disabled; restore the import, the
+// getSSEClientTransportOptions method and the "sse" case in constructTransport together.
+import {
+  Client,
+  StreamableHTTPClientTransport,
+  StreamableHTTPClientTransportOptions,
+  Transport,
+  ClientRequest,
+  Prompt,
+  Resource,
+  ResourceTemplateType,
+  Tool,
+} from "@modelcontextprotocol/client";
+// import { Client, SSEClientTransport, SSEClientTransportOptions, StreamableHTTPClientTransport, StreamableHTTPClientTransportOptions, Transport, ClientRequest, Prompt, Resource, ResourceTemplateType, Tool } from "@modelcontextprotocol/client";
+
 /*
 Copyright (C) 2025 European Union
  
@@ -12,34 +27,17 @@ the Licence is distributed on an “AS IS” basis, WITHOUT WARRANTIES OR CONDIT
 OF ANY KIND, either express or implied. See the Licence for the specific language
 governing permissions and limitations under the Licence.
 */
-
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import {
-  SSEClientTransport,
-  SSEClientTransportOptions,
-} from "@modelcontextprotocol/sdk/client/sse.js";
-import {
-  StreamableHTTPClientTransport,
-  StreamableHTTPClientTransportOptions,
-} from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { WebSocketClientTransport } from "@modelcontextprotocol/sdk/client/websocket.js";
-import { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
-import {
-  ClientRequest,
-  Prompt,
-  Resource,
-  ResourceTemplate,
-  Tool,
-} from "@modelcontextprotocol/sdk/types.js";
-import { JsonSchemaValidatorResult } from "@modelcontextprotocol/sdk/validation";
 import { schemas } from "aloha-shared";
 import z from "zod";
+import { injector } from "../injector/injector";
 import { getLogger } from "../injector/provide-logger";
+import { requestContext } from "../middleware/request-context";
 import { TokenSetProvider } from "../middleware/oidc/oidc-support";
 import {
   hasMessageField,
   promisedStatus,
   PromisedStatus,
+  unknownToString,
 } from "../utils/type-utils";
 import { getAdditionalAuthenticationHeaders } from "./auth-utils";
 import { RemoteClient } from "./remote-client";
@@ -56,7 +54,7 @@ export default class MCPClient implements RemoteClient {
   public connectionOptions: schemas.MCPBaseConnectionWithId;
 
   public resources: Resource[] = [];
-  public resourceTemplates: ResourceTemplate[] = [];
+  public resourceTemplates: ResourceTemplateType[] = [];
   public prompts: Prompt[] = [];
   public tools: Tool[] = [];
 
@@ -153,7 +151,7 @@ export default class MCPClient implements RemoteClient {
       return;
     }
     try {
-      await this.client.ping();
+      await this.client.ping({ timeout: TIMEOUT_CONNECT_MS });
     } catch (error: unknown) {
       await this.close();
       logger().child({ connectionId: this.connectionOptions.id }).debug(error);
@@ -170,15 +168,33 @@ export default class MCPClient implements RemoteClient {
   }
 
   public async close() {
+    const log = logger().child({ clientId: this.connectionOptions.id });
     if (this.client) {
-      if (
-        this.sessionId &&
-        this.client.transport instanceof StreamableHTTPClientTransport
-      ) {
-        await this.client.transport.terminateSession();
+      // Teardown must be best-effort: when the upstream server has gone away,
+      // terminateSession()/transport.close() can reject (e.g. ECONNREFUSED on
+      // the DELETE). If we let that propagate, `connectPromise` is never reset
+      // to null, so `isConnected` keeps reporting the stale "connected" state
+      // and the manager never detects the server going down.
+      try {
+        if (
+          this.sessionId &&
+          this.client.transport instanceof StreamableHTTPClientTransport
+        ) {
+          await this.client.transport.terminateSession();
+        }
+      } catch (error) {
+        log.debug(error, "terminateSession failed during close; continuing teardown");
       }
-      await this.client.transport?.close();
-      await this.client.close();
+      try {
+        await this.client.transport?.close();
+      } catch (error) {
+        log.debug(error, "transport.close failed during close; continuing teardown");
+      }
+      try {
+        await this.client.close();
+      } catch (error) {
+        log.debug(error, "client.close failed during close; continuing teardown");
+      }
     }
     this.connectPromise = null;
   }
@@ -250,8 +266,17 @@ export default class MCPClient implements RemoteClient {
           .then(({ tools }) => {
             this.tools = tools;
           })
-          .catch((error) => {
-            log.debug(error);
+          .catch((error: unknown) => {
+            const err = error as Partial<Error> | undefined;
+            log.warn(
+              {
+                connection: this.connectionOptions.name,
+                errorName: err?.name,
+                errorMessage: err?.message ?? unknownToString(error),
+                errorStack: err?.stack,
+              },
+              "Failed to list tools for connection; tools will be empty"
+            );
           })
       );
     }
@@ -260,33 +285,6 @@ export default class MCPClient implements RemoteClient {
   }
 
   private constructClient() {
-    const options = this.connectionOptions;
-    const jsonSchemaValidator: import("@modelcontextprotocol/sdk/validation/index.js").jsonSchemaValidator =
-      {
-        getValidator<T>(
-          schema: import("@modelcontextprotocol/sdk/validation/index.js").JsonSchemaType
-        ) {
-          return (input: unknown) => {
-            const validator = z.fromJSONSchema(
-              schema as z.core.JSONSchema.JSONSchema
-            );
-            if (validator.safeParse(input)) {
-              return {
-                valid: true,
-                data: input as T,
-                errorMessage: undefined,
-              } as JsonSchemaValidatorResult<T>;
-            } else {
-              return {
-                valid: false,
-                data: undefined,
-                errorMessage: `Could not validate the json schema of ${options.name}`,
-              };
-            }
-          };
-        },
-      };
-
     const client = new Client(
       {
         name: "mcp-hub",
@@ -294,7 +292,6 @@ export default class MCPClient implements RemoteClient {
       },
       {
         capabilities: {},
-        jsonSchemaValidator,
         listChanged: {
           tools: {
             onChanged: (err, tools) => {
@@ -325,11 +322,82 @@ export default class MCPClient implements RemoteClient {
     return client;
   }
 
-  private getSSEClientTransportOptions(
+  // [SSE-SUPPORT-REMOVED] Outbound SSE transport options; restore with the "sse" case in constructTransport.
+  // private getSSEClientTransportOptions(
+  //   serverOptions: schemas.MCPBaseConnection,
+  //   tokenSetProvider: TokenSetProvider | undefined
+  // ): SSEClientTransportOptions {
+  //   let options: SSEClientTransportOptions = {};
+  //   if (serverOptions.authentication) {
+  //     const { additionalHeaders, authProvider } =
+  //       getAdditionalAuthenticationHeaders(
+  //         serverOptions.authentication,
+  //         tokenSetProvider
+  //       );
+  //
+  //     if (additionalHeaders) {
+  //       options = {
+  //         ...options,
+  //         eventSourceInit: {
+  //           fetch: (url, opts) => {
+  //             const headers = opts?.headers || {};
+  //
+  //             return global.fetch(url, {
+  //               ...opts,
+  //               headers: { ...headers, ...additionalHeaders },
+  //             });
+  //           },
+  //         },
+  //         requestInit: {
+  //           headers: additionalHeaders,
+  //         },
+  //       };
+  //     }
+  //     if (authProvider) {
+  //       options = {
+  //         ...options,
+  //         authProvider,
+  //       };
+  //     }
+  //   }
+  //   return options;
+  // }
+
+  private getStreamableHTTPClientTransportOptions(
     serverOptions: schemas.MCPBaseConnection,
+
     tokenSetProvider: TokenSetProvider | undefined
-  ): SSEClientTransportOptions {
-    let options: SSEClientTransportOptions = {};
+  ): StreamableHTTPClientTransportOptions {
+    let options: StreamableHTTPClientTransportOptions = {};
+
+    const overridesWhitelist = new Set(
+      injector().resolve("allowedHttpHeadersOverrides")
+    );
+    const incomingRequest = requestContext.getStore();
+    const incomingHeaders = incomingRequest?.headers;
+
+    const allowedHeaders: Record<string, string> = {};
+    for (const [rawName, header] of Object.entries(
+      serverOptions.allowedHttpHeaders ?? {}
+    )) {
+      const name = rawName.trim().toLowerCase();
+      if (!name) {
+        continue;
+      }
+
+      let value = header.value;
+      if (header.override && overridesWhitelist.has(name)) {
+        const incomingValue = incomingHeaders?.[name];
+        if (typeof incomingValue === "string") {
+          value = incomingValue;
+        } else if (Array.isArray(incomingValue) && incomingValue.length > 0) {
+          value = incomingValue.join(", ");
+        }
+      }
+
+      allowedHeaders[name] = value;
+    }
+
     if (serverOptions.authentication) {
       const { additionalHeaders, authProvider } =
         getAdditionalAuthenticationHeaders(
@@ -340,16 +408,6 @@ export default class MCPClient implements RemoteClient {
       if (additionalHeaders) {
         options = {
           ...options,
-          eventSourceInit: {
-            fetch: (url, opts) => {
-              const headers = opts?.headers || {};
-
-              return global.fetch(url, {
-                ...opts,
-                headers: { ...headers, ...additionalHeaders },
-              });
-            },
-          },
           requestInit: {
             headers: additionalHeaders,
           },
@@ -362,37 +420,20 @@ export default class MCPClient implements RemoteClient {
         };
       }
     }
-    return options;
-  }
 
-  private getStreamableHTTPClientTransportOptions(
-    serverOptions: schemas.MCPBaseConnection,
-
-    tokenSetProvider: TokenSetProvider | undefined
-  ): StreamableHTTPClientTransportOptions {
-    let options: StreamableHTTPClientTransportOptions = {};
-
-    if (serverOptions.authentication) {
-      const { additionalHeaders, authProvider } =
-        getAdditionalAuthenticationHeaders(
-          serverOptions.authentication,
-          tokenSetProvider
-        );
-
-      if (additionalHeaders) {
-        options = {
-          ...options,
-          requestInit: {
-            headers: additionalHeaders,
+    if (Object.keys(allowedHeaders).length > 0) {
+      options = {
+        ...options,
+        requestInit: {
+          ...options.requestInit,
+          headers: {
+            ...(options.requestInit?.headers as
+              | Record<string, string>
+              | undefined),
+            ...allowedHeaders,
           },
-        };
-      }
-      if (authProvider) {
-        options = {
-          ...options,
-          authProvider,
-        };
-      }
+        },
+      };
     }
 
     // Add fetch wrapper to detect session headers
@@ -424,21 +465,19 @@ export default class MCPClient implements RemoteClient {
           streamableOptions
         );
       }
-      case "websocket":
-        return new WebSocketClientTransport(new URL(serverOptions.serverUrl));
-      case "sse": {
-        const sseOptions = this.getSSEClientTransportOptions(
-          serverOptions,
-          tokenSetProvider
-        );
-        return new SSEClientTransport(
-          new URL(`${serverOptions.serverUrl}/sse`),
-          sseOptions
-        );
-      }
+      // [SSE-SUPPORT-REMOVED] Outbound SSE transport; restore with getSSEClientTransportOptions.
+      // case "sse": {
+      //   const sseOptions = this.getSSEClientTransportOptions(
+      //     serverOptions,
+      //     tokenSetProvider
+      //   );
+      //   return new SSEClientTransport(
+      //     new URL(`${serverOptions.serverUrl}/sse`),
+      //     sseOptions
+      //   );
+      // }
       default:
         throw new Error(
-          // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
           `Unsupported transport type: ${serverOptions.serverProtocol}`
         );
     }

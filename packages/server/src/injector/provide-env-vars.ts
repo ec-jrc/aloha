@@ -49,11 +49,22 @@ export function provideEnvVars<T>(injector: Injector<T>) {
   const DEFAULT_JWT_AUTHENTICATION =
     process.env.DEFAULT_JWT_AUTHENTICATION || "true";
 
+  const ALLOWED_HTTP_HEADERS_OVERRIDES = (
+    process.env.ALLOWED_HTTP_HEADERS_OVERRIDES || ""
+  )
+    .split(",")
+    .map((h) => h.trim().toLowerCase())
+    .filter(Boolean);
+
   const newInjector = injector
     .provideValue("isProduction", isProduction)
     .provideValue(
       "defaultJWTAuthentication",
       DEFAULT_JWT_AUTHENTICATION === "true"
+    )
+    .provideValue(
+      "allowedHttpHeadersOverrides",
+      ALLOWED_HTTP_HEADERS_OVERRIDES
     )
     .provideValue("pluginPath", process.env.AUTHENTICATION_PLUGIN)
     .provideValue(

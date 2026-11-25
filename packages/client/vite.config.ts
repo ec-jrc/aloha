@@ -85,6 +85,18 @@ export default defineConfig(() => {
         "^/api": {
           target: proxy_url,
         },
+        "^/authorize": {
+          target: proxy_url,
+        },
+        "^/token": {
+          target: proxy_url,
+        },
+        "^/revoke": {
+          target: proxy_url,
+        },
+        "^/.well-known": {
+          target: proxy_url,
+        },
       },
     },
 

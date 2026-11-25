@@ -12,7 +12,7 @@ Aloha Projects are associated with users and clients, and they involve various a
 
 ### Project-Based Access Control
 
-**Example:** If a user is assigned to the GPT@JRC project, they will only see the clients associated with this project.
+**Example:** If a user is assigned to the "example-project" project, they will only see the clients associated with this project.
 
 ### Key Features
 

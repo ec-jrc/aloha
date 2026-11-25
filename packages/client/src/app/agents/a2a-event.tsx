@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/dialog";
 import JsonView from "@/mcp-inspector/JsonView";
 import { A2ADisplayEvent } from "@/utils/a2a-event-transformer";
+import { taskStateToJSON } from "@a2a-js/sdk";
 import { Check, Code, Copy } from "lucide-react";
 import { useState } from "react";
 import ArtifactDisplay from "./artifact-display";
@@ -38,7 +39,7 @@ export function A2AEvent({ event }: { event: A2ADisplayEvent }) {
       case "agent_message":
         return event.content;
       case "task_status":
-        return `${event.status}${event.message ? `: ${event.message}` : ""}`;
+        return `${taskStateToJSON(event.status)}${event.message ? `: ${event.message}` : ""}`;
       case "error":
         return event.message;
       default:

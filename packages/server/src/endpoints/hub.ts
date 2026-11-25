@@ -71,7 +71,7 @@ export function hubRouter() {
         online: servers.length,
         total: servers.length,
       },
-    } as endpoints_schemas.HubStatus);
+    });
     res.json(response).end();
   });
 
@@ -87,6 +87,20 @@ export function hubRouter() {
         logger().error(err);
         res.status(500).json({ error: unknownToString(err) });
       }
+    }
+  );
+
+  router.get(
+    "/allowed-http-headers-overrides",
+    (_req: Request, res: Response) => {
+      const allowedHttpHeadersOverrides = injector().resolve(
+        "allowedHttpHeadersOverrides"
+      );
+      const response =
+        endpoints_schemas.AllowedHttpHeadersOverridesSchema.parse({
+          allowedHttpHeadersOverrides,
+        });
+      res.json(response).end();
     }
   );
 

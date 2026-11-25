@@ -14,7 +14,10 @@ governing permissions and limitations under the Licence.
 */
 
 import { authentication_strategy } from "aloha-shared";
-import express, { NextFunction, Request, Response } from "express";
+// [SSE-SUPPORT-REMOVED] NextFunction/Request/Response type annotations were only used by the
+// commented-out SSE routes; restore the express import below together with those routes.
+// import express, { NextFunction, Request, Response } from "express";
+import express from "express";
 import { injector } from "../injector/injector";
 import { getLogger } from "../injector/provide-logger";
 import { authorise } from "../middleware/authorise";
@@ -91,67 +94,71 @@ export function serverProxyRoutes() {
     }
   );
 
-  // SSE Route
-  router.get(
-    "/:path/sse",
-    authorise([authentication_strategy.Permissions.ProxyApiAccess]),
-    async (req: Request, res: Response, next: NextFunction) => {
-      const { path } = req.params;
-
-      const log = logger().child({ path });
-      log.debug("Proxy SSE request");
-
-      const server = await getServer(undefined, req, res, MCPServer);
-      if (server !== undefined && server.router !== undefined) {
-        try {
-          await server.router.sseRequest(req, res, next);
-        } catch (e) {
-          log.error(e);
-          res.writeHead(405).end(
-            JSON.stringify({
-              jsonrpc: "2.0",
-              error: {
-                code: -1099,
-                message: "Failed to connect to MCP server",
-              },
-              id: null,
-            })
-          );
-        }
-      }
-    }
-  );
-
-  // Messages route
-  router.post(
-    "/:path/messages",
-    authorise([authentication_strategy.Permissions.ProxyApiAccess]),
-    async (req: Request, res: Response, next: NextFunction) => {
-      const { path } = req.params;
-
-      const log = logger().child({ path });
-      log.debug("Proxy Messages request");
-
-      const server = await getServer(undefined, req, res, MCPServer);
-      if (server !== undefined && server.router !== undefined) {
-        try {
-          await server.router.messageRequest(req, res, next);
-        } catch (e) {
-          log.error(e);
-          res.writeHead(405).end(
-            JSON.stringify({
-              jsonrpc: "2.0",
-              error: {
-                code: -1099,
-                message: "Failed to connect to MCP server",
-              },
-              id: null,
-            })
-          );
-        }
-      }
-    }
-  );
+  // [SSE-SUPPORT-REMOVED] Legacy SSE routes; restore together with sseRequest/messageRequest in
+  // mcp-server.ts and the @modelcontextprotocol/server-legacy dependency.
+  // // SSE Route
+  // router.get(
+  //   "/:path/sse",
+  //   optionalOIDCMiddleware,
+  //   authorise([authentication_strategy.Permissions.ProxyApiAccess]),
+  //   async (req: Request, res: Response, next: NextFunction) => {
+  //     const { path } = req.params;
+  //
+  //     const log = logger().child({ path });
+  //     log.debug("Proxy SSE request");
+  //
+  //     const server = await getServer(undefined, req, res, MCPServer);
+  //     if (server !== undefined && server.router !== undefined) {
+  //       try {
+  //         await server.router.sseRequest(req, res, next);
+  //       } catch (e) {
+  //         log.error(e);
+  //         res.writeHead(405).end(
+  //           JSON.stringify({
+  //             jsonrpc: "2.0",
+  //             error: {
+  //               code: -1099,
+  //               message: "Failed to connect to MCP server",
+  //             },
+  //             id: null,
+  //           })
+  //         );
+  //       }
+  //     }
+  //   }
+  // );
+  //
+  // // Messages route
+  // router.post(
+  //   "/:path/messages",
+  //   optionalOIDCMiddleware,
+  //   authorise([authentication_strategy.Permissions.ProxyApiAccess]),
+  //   async (req: Request, res: Response, next: NextFunction) => {
+  //     const { path } = req.params;
+  //
+  //     const log = logger().child({ path });
+  //     log.debug("Proxy Messages request");
+  //
+  //     const server = await getServer(undefined, req, res, MCPServer);
+  //     if (server !== undefined && server.router !== undefined) {
+  //       try {
+  //         await server.router.messageRequest(req, res, next);
+  //       } catch (e) {
+  //         log.error(e);
+  //         res.writeHead(405).end(
+  //           JSON.stringify({
+  //             jsonrpc: "2.0",
+  //             error: {
+  //               code: -1099,
+  //               message: "Failed to connect to MCP server",
+  //             },
+  //             id: null,
+  //           })
+  //         );
+  //       }
+  //     }
+  //   }
+  // );
 
   router.get(
     "/:path/info",

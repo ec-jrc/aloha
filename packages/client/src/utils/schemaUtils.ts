@@ -1,8 +1,8 @@
 import type { JsonValue, JsonSchemaType, JsonObject } from "./jsonUtils";
 import Ajv from "ajv";
 import type { ValidateFunction } from "ajv";
-import type { Tool, JSONRPCMessage } from "@modelcontextprotocol/sdk/types.js";
-import { isJSONRPCRequest } from "@modelcontextprotocol/sdk/types.js";
+import { isJSONRPCRequest } from "@modelcontextprotocol/client";
+import type { Tool, JSONRPCMessage } from "@modelcontextprotocol/client";
 
 const ajv = new Ajv();
 

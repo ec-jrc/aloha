@@ -1,5 +1,14 @@
-import { AGENT_CARD_PATH, AgentCard, Message, Task } from "@a2a-js/sdk";
 import {
+  A2A_PROTOCOL_VERSION,
+  AGENT_CARD_PATH,
+  AgentCard,
+  Message,
+  Role,
+  Task,
+  TaskState,
+} from "@a2a-js/sdk";
+import {
+  AgentEvent,
   AgentExecutor,
   DefaultRequestHandler,
   ExecutionEventBus,
@@ -15,46 +24,99 @@ import {
 import express from "express";
 import { v4 as uuidv4 } from "uuid";
 
+const supportedInterfaces = [
+  {
+    url: "http://localhost:4000/a2a/jsonrpc",
+    protocolBinding: "JSONRPC",
+    tenant: "",
+    protocolVersion: A2A_PROTOCOL_VERSION,
+  },
+  {
+    url: "http://localhost:4000/a2a/rest",
+    protocolBinding: "HTTP+JSON",
+    tenant: "",
+    protocolVersion: A2A_PROTOCOL_VERSION,
+  },
+];
+
 const streamingAgentCard: AgentCard = {
   name: "Hello Agent",
   description: "A simple agent that says hello.",
-  protocolVersion: "0.3.0",
   version: "0.1.0",
-  url: "http://localhost:4000/a2a/jsonrpc", // The public URL of your agent server
+  supportedInterfaces,
+  provider: undefined,
   skills: [
-    { id: "chat", name: "Chat", description: "Say hello", tags: ["chat"] },
+    {
+      id: "chat",
+      name: "Chat",
+      description: "Say hello",
+      tags: ["chat"],
+      examples: [],
+      inputModes: [],
+      outputModes: [],
+      securityRequirements: [],
+    },
   ],
   capabilities: {
     pushNotifications: false,
     streaming: true,
+    extensions: [],
   },
+  securitySchemes: {},
+  securityRequirements: [],
   defaultInputModes: ["text"],
   defaultOutputModes: ["text"],
-  additionalInterfaces: [
-    { url: "http://localhost:4000/a2a/jsonrpc", transport: "JSONRPC" }, // Default JSON-RPC transport
-    { url: "http://localhost:4000/a2a/rest", transport: "HTTP+JSON" }, // HTTP+JSON/REST transport
-  ],
+  signatures: [],
 };
 
 const helloAgentCard: AgentCard = {
   name: "Hello Agent",
   description: "A simple agent that says hello.",
-  protocolVersion: "0.3.0",
   version: "0.1.0",
-  url: "http://localhost:4000/a2a/jsonrpc", // The public URL of your agent server
+  supportedInterfaces,
+  provider: undefined,
   skills: [
-    { id: "chat", name: "Chat", description: "Say hello", tags: ["chat"] },
+    {
+      id: "chat",
+      name: "Chat",
+      description: "Say hello",
+      tags: ["chat"],
+      examples: [],
+      inputModes: [],
+      outputModes: [],
+      securityRequirements: [],
+    },
   ],
   capabilities: {
     pushNotifications: false,
+    extensions: [],
   },
+  securitySchemes: {},
+  securityRequirements: [],
   defaultInputModes: ["text"],
   defaultOutputModes: ["text"],
-  additionalInterfaces: [
-    { url: "http://localhost:4000/a2a/jsonrpc", transport: "JSONRPC" }, // Default JSON-RPC transport
-    { url: "http://localhost:4000/a2a/rest", transport: "HTTP+JSON" }, // HTTP+JSON/REST transport
-  ],
+  signatures: [],
 };
+
+function textMessage(text: string, contextId = ""): Message {
+  return {
+    messageId: uuidv4(),
+    contextId,
+    taskId: "",
+    role: Role.ROLE_AGENT,
+    parts: [
+      {
+        content: { $case: "text", value: text },
+        metadata: undefined,
+        filename: "",
+        mediaType: "text/plain",
+      },
+    ],
+    metadata: undefined,
+    extensions: [],
+    referenceTaskIds: [],
+  };
+}
 
 // 2. Implement the agent's logic.
 class HelloExecutor implements AgentExecutor {
@@ -63,17 +125,13 @@ class HelloExecutor implements AgentExecutor {
     eventBus: ExecutionEventBus
   ): Promise<void> {
     // Create a direct message response.
-    const responseMessage: Message = {
-      kind: "message",
-      messageId: uuidv4(),
-      role: "agent",
-      parts: [{ kind: "text", text: "Hello, world!" }],
-      // Associate the response with the incoming request's context.
-      contextId: requestContext.contextId,
-    };
+    const responseMessage = textMessage(
+      "Hello, world!",
+      requestContext.contextId
+    );
 
     // Publish the message and signal that the interaction is finished.
-    eventBus.publish(responseMessage);
+    eventBus.publish(AgentEvent.message(responseMessage));
     eventBus.finished();
   }
 
@@ -92,117 +150,121 @@ class StreamingExecutor implements AgentExecutor {
     // 1. Create and publish the initial task object if it doesn't exist.
     if (!task) {
       const initialTask: Task = {
-        kind: "task",
         id: taskId,
         contextId: contextId,
         status: {
-          state: "submitted",
-          message: {
-            messageId: uuidv4(),
-            role: "agent",
-            kind: "message",
-            parts: [
-              {
-                kind: "text",
-                text: "Long running task just submitted",
-              },
-            ],
-          },
+          state: TaskState.TASK_STATE_SUBMITTED,
+          message: textMessage("Long running task just submitted", contextId),
           timestamp: new Date().toISOString(),
         },
+        artifacts: [],
         history: [userMessage],
+        metadata: undefined,
       };
-      eventBus.publish(initialTask);
+      eventBus.publish(AgentEvent.task(initialTask));
     }
 
     await new Promise((resolve) => setTimeout(resolve, 1000));
     if (this.canceledTasks.includes(taskId)) {
-      return eventBus.publish({
-        kind: "status-update",
-        taskId: taskId,
-        contextId: contextId,
-        status: { state: "canceled", timestamp: new Date().toISOString() },
-        final: true,
-      });
+      return eventBus.publish(
+        AgentEvent.statusUpdate({
+          taskId: taskId,
+          contextId: contextId,
+          status: {
+            state: TaskState.TASK_STATE_CANCELED,
+            message: undefined,
+            timestamp: new Date().toISOString(),
+          },
+          metadata: undefined,
+        })
+      );
     }
     // 2. Publish 'working' state.
-    eventBus.publish({
-      kind: "status-update",
-      taskId,
-      contextId,
-      status: {
-        state: "working",
-        timestamp: new Date().toISOString(),
-
-        message: {
-          messageId: uuidv4(),
-          role: "agent",
-          kind: "message",
-          parts: [
-            {
-              kind: "text",
-              text: "Long running task is working",
-            },
-          ],
+    eventBus.publish(
+      AgentEvent.statusUpdate({
+        taskId,
+        contextId,
+        status: {
+          state: TaskState.TASK_STATE_WORKING,
+          timestamp: new Date().toISOString(),
+          message: textMessage("Long running task is working", contextId),
         },
-      },
-      final: false,
-    });
+        metadata: undefined,
+      })
+    );
 
     // 3. Simulate work and publish an artifact.
     await new Promise((resolve) => setTimeout(resolve, 1000));
     if (this.canceledTasks.includes(taskId)) {
-      return eventBus.publish({
-        kind: "status-update",
-        taskId: taskId,
-        contextId: contextId,
-        status: { state: "canceled", timestamp: new Date().toISOString() },
-        final: true,
-      });
+      return eventBus.publish(
+        AgentEvent.statusUpdate({
+          taskId: taskId,
+          contextId: contextId,
+          status: {
+            state: TaskState.TASK_STATE_CANCELED,
+            message: undefined,
+            timestamp: new Date().toISOString(),
+          },
+          metadata: undefined,
+        })
+      );
     }
-    eventBus.publish({
-      kind: "artifact-update",
-      taskId,
-      contextId,
-      artifact: {
-        artifactId: "result.txt",
-        parts: [{ kind: "text", text: "First result." }],
-      },
-    });
+    eventBus.publish(
+      AgentEvent.artifactUpdate({
+        taskId,
+        contextId,
+        artifact: {
+          artifactId: "result.txt",
+          name: "result.txt",
+          description: "",
+          parts: [
+            {
+              content: { $case: "text", value: "First result." },
+              metadata: undefined,
+              filename: "",
+              mediaType: "text/plain",
+            },
+          ],
+          metadata: undefined,
+          extensions: [],
+        },
+        append: false,
+        lastChunk: true,
+        metadata: undefined,
+      })
+    );
 
     // 4. Publish final 'completed' state.
     await new Promise((resolve) => setTimeout(resolve, 1000));
     if (this.canceledTasks.includes(taskId)) {
-      return eventBus.publish({
-        kind: "status-update",
-        taskId: taskId,
-        contextId: contextId,
-        status: { state: "canceled", timestamp: new Date().toISOString() },
-        final: true,
-      });
+      return eventBus.publish(
+        AgentEvent.statusUpdate({
+          taskId: taskId,
+          contextId: contextId,
+          status: {
+            state: TaskState.TASK_STATE_CANCELED,
+            message: undefined,
+            timestamp: new Date().toISOString(),
+          },
+          metadata: undefined,
+        })
+      );
     }
-    eventBus.publish({
-      kind: "status-update",
-      taskId,
-      contextId,
-      status: {
-        state: "completed",
-        timestamp: new Date().toISOString(),
-
-        message: {
-          messageId: uuidv4(),
-          role: "agent",
-          kind: "message",
-          parts: [
-            {
-              kind: "text",
-              text: "Long running task is completed, please check the artifact",
-            },
-          ],
+    eventBus.publish(
+      AgentEvent.statusUpdate({
+        taskId,
+        contextId,
+        status: {
+          state: TaskState.TASK_STATE_COMPLETED,
+          timestamp: new Date().toISOString(),
+          message: textMessage(
+            "Long running task is completed, please check the artifact",
+            contextId
+          ),
         },
-      },
-      final: true,
-    });
+        metadata: undefined,
+      })
+    );
     eventBus.finished();
   }
   cancelTask = async (taskId: string): Promise<void> => {

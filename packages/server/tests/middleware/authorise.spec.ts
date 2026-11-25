@@ -36,11 +36,11 @@ describe("authorise", () => {
     };
 
     mockRes = {
-      status: function (code: number) {
+      status: function (this: unknown, code: number) {
         statusCode = code;
         return this;
       } as any,
-      json: function (data: any) {
+      json: function (this: unknown, data: any) {
         jsonResponse = data;
         return this;
       } as any,

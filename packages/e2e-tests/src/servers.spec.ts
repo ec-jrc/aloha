@@ -28,9 +28,8 @@ import {
   getRandomString,
   getServerListPageHandle,
 } from "./utils/test-ui-utils";
+import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import { ElementHandle, Page } from "puppeteer";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 
 async function waitForFirstServerListed(page: Page) {
   return await page.waitForSelector(

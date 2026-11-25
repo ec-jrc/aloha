@@ -29,19 +29,13 @@ import { Label } from "@/components/ui/label";
 import JsonView from "@/mcp-inspector/JsonView";
 import { sendMCPClientRequest } from "@/services/clients";
 import { exceptionToMessage } from "@/utils/type-utils";
+import { ReadResourceResultSchema, ResourceSchema, ResourceTemplateSchema } from "@modelcontextprotocol/core";
+import { ReadResourceResult, Resource, ResourceTemplateType } from "@modelcontextprotocol/client";
 import { DocumentTextIcon } from "@heroicons/react/24/solid";
-import {
-  ReadResourceResult,
-  ReadResourceResultSchema,
-  Resource,
-  ResourceSchema,
-  ResourceTemplate,
-  ResourceTemplateSchema,
-} from "@modelcontextprotocol/sdk/types.js";
 import { useState } from "react";
 
 type Props = {
-  resource: Resource | ResourceTemplate;
+  resource: Resource | ResourceTemplateType;
   clientId: string;
   disabled: boolean;
 };

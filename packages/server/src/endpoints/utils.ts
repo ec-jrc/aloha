@@ -151,7 +151,7 @@ export const validateRequestBody =
 // const agentRepository = () => injector.resolve("agentRepository");
 // const agentsCache = () => injector.resolve("agentsCache");
 
-// eslint-disable-next-line complexity
+ 
 export const verifyPermission = async (
   obj: schemas.VisibilityInterface,
   req: Request,
@@ -502,19 +502,27 @@ export function permissionsManagerGenerator<
         }
         return;
       }
+      try {
+        const update = await repository().updateById(
+          req.params.id,
+          req.body as Partial<T>
+        );
 
-      const update = await repository().updateById(
-        req.params.id,
-        req.body as Partial<T>
-      );
-      if (!update) {
-        logger().error(`Failed to set the creator of the entity`);
+        if (!update) {
+          logger().error(`Failed to set the creator of the entity`);
+          res
+            .status(500)
+            .json({ error: `Failed to set the creator of the entity` });
+        } else {
+          fetchCache().clear();
+          res.status(204).end();
+        }
+      } catch (err) {
+        logger().error(err);
         res
           .status(500)
-          .json({ error: `Failed to set the creator of the entity` });
-      } else {
-        fetchCache().clear();
-        res.status(204).end();
+          .json({ error: unknownToString(err) })
+          .end();
       }
     }
   );

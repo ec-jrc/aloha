@@ -161,10 +161,12 @@ export class PostgreSQLConnectionOptionsRepository
             e.authentication.clientId,
             this.serverSecret
           );
-          e.authentication.clientSecret = fun(
-            e.authentication.clientSecret,
-            this.serverSecret
-          );
+          if (e.authentication.clientSecret) {
+            e.authentication.clientSecret = fun(
+              e.authentication.clientSecret,
+              this.serverSecret
+            );
+          }
           break;
       }
     }

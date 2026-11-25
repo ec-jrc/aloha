@@ -15,9 +15,10 @@ governing permissions and limitations under the Licence.
 
 import {
   AgentCard,
-  MessageSendParams,
+  SendMessageRequest,
+  StreamResponse,
   Task,
-  TaskStatusUpdateEvent,
+  TaskState,
 } from "@a2a-js/sdk";
 import {
   BeforeArgs,
@@ -25,8 +26,12 @@ import {
   Client,
   ClientFactory,
   ClientFactoryOptions,
+  DefaultAgentCardResolver,
+  JsonRpcTransportFactory,
+  RestTransportFactory,
 } from "@a2a-js/sdk/client";
 import {
+  AgentEvent,
   AgentExecutionEvent,
   ExecutionEventBus,
   RequestContext,
@@ -39,6 +44,18 @@ import { getAdditionalAuthenticationHeaders } from "./auth-utils";
 import { RemoteClient } from "./remote-client";
 
 const logger = getLogger("A2A-CLIENT");
+
+function buildLegacyCompatOptions(): Partial<ClientFactoryOptions> {
+  return {
+    transports: [
+      new JsonRpcTransportFactory({ legacyCompat: { enabled: true } }),
+      new RestTransportFactory({ legacyCompat: { enabled: true } }),
+    ],
+    cardResolver: new DefaultAgentCardResolver({
+      legacyCompat: { enabled: true },
+    }),
+  };
+}
 
 class AuthInterceptor implements CallInterceptor {
   constructor(
@@ -88,6 +105,46 @@ const TASK_TTL_MS = parseInt(
   10
 );
 
+const TERMINAL_TASK_STATES: ReadonlySet<TaskState> = new Set([
+  TaskState.TASK_STATE_COMPLETED,
+  TaskState.TASK_STATE_CANCELED,
+  TaskState.TASK_STATE_FAILED,
+  TaskState.TASK_STATE_REJECTED,
+]);
+
+function streamResponseToAgentEvent(
+  response: StreamResponse
+): AgentExecutionEvent | undefined {
+  const payload = response.payload;
+  if (!payload) {
+    return undefined;
+  }
+  switch (payload.$case) {
+    case "task":
+      return AgentEvent.task(payload.value);
+    case "message":
+      return AgentEvent.message(payload.value);
+    case "statusUpdate":
+      return AgentEvent.statusUpdate(payload.value);
+    case "artifactUpdate":
+      return AgentEvent.artifactUpdate(payload.value);
+    default:
+      return undefined;
+  }
+}
+
+function taskIdOfEvent(event: AgentExecutionEvent): string | undefined {
+  switch (event.kind) {
+    case "task":
+      return event.data.id;
+    case "statusUpdate":
+    case "artifactUpdate":
+      return event.data.taskId;
+    case "message":
+      return event.data.taskId || undefined;
+  }
+}
+
 export class A2AClient implements RemoteClient {
   private clientFactory: ClientFactory;
   private agentCard: AgentCard | undefined;
@@ -106,15 +163,7 @@ export class A2AClient implements RemoteClient {
     public connectionOptions: schemas.AgentWithId,
     public tokenSetProvider: TokenSetProvider | undefined
   ) {
-    this.clientFactory = new ClientFactory(
-      ClientFactoryOptions.createFrom(ClientFactoryOptions.default, {
-        clientConfig: {
-          interceptors: [
-            new AuthInterceptor(connectionOptions, tokenSetProvider),
-          ],
-        },
-      })
-    );
+    this.clientFactory = this.buildClientFactory(tokenSetProvider);
   }
 
   public get id(): string {
@@ -122,13 +171,6 @@ export class A2AClient implements RemoteClient {
   }
 
   public get isConnected(): boolean {
-    // logger()
-    //   .child({
-    //     clientId: this.connectionOptions.id,
-    //     client: this.client !== undefined,
-    //     agentCard: this.agentCard,
-    //   })
-    //   .info("isConnected");
     return this.client !== undefined && this.agentCard !== undefined;
   }
 
@@ -169,7 +211,7 @@ export class A2AClient implements RemoteClient {
     return Promise.resolve();
   }
 
-  public getAgentCard() {
+  public getAgentCard(): AgentCard | undefined {
     return this.agentCard;
   }
 
@@ -183,31 +225,44 @@ export class A2AClient implements RemoteClient {
     const client = await this.connectToA2AServer(
       mappedClientTask ? mappedClientTask.tokenSetProvider : undefined
     );
-    const updateMessage: TaskStatusUpdateEvent = {
-      kind: "status-update",
+    const failedUpdate = AgentEvent.statusUpdate({
       taskId: taskId,
-      final: true,
       contextId: mappedClientTask?.task.contextId || "",
       status: {
-        state: "failed",
+        state: TaskState.TASK_STATE_FAILED,
+        message: undefined,
+        timestamp: undefined,
       },
-    };
+      metadata: undefined,
+    });
 
     if (!mappedClientTask) {
-      eventBus.publish(updateMessage);
+      eventBus.publish(failedUpdate);
       return;
     }
 
     try {
-      const task = await client.cancelTask({ id: mappedClientTask.task.id });
-
-      eventBus.publish({
-        ...updateMessage,
-        status: task.status,
+      const task = await client.cancelTask({
+        tenant: "",
+        id: mappedClientTask.task.id,
+        metadata: undefined,
       });
+
+      eventBus.publish(
+        AgentEvent.statusUpdate({
+          taskId: taskId,
+          contextId: task.contextId || mappedClientTask.task.contextId || "",
+          status: task.status ?? {
+            state: TaskState.TASK_STATE_CANCELED,
+            message: undefined,
+            timestamp: undefined,
+          },
+          metadata: undefined,
+        })
+      );
     } catch (err) {
       logger().child({ taskId: taskId }).error(err);
-      eventBus.publish(updateMessage);
+      eventBus.publish(failedUpdate);
     }
   }
 
@@ -218,40 +273,45 @@ export class A2AClient implements RemoteClient {
     assertDefined(this.agentCard);
 
     const tokenSetProvider: TokenSetProvider | undefined =
-      this.getUserTokenSet(requestContext);
+      this.getUserAsAccessTokenTokenSetProvider(requestContext);
 
     const client = await this.connectToA2AServer(tokenSetProvider);
-    const supportsStreaming = this.agentCard.capabilities.streaming || false;
+    const supportsStreaming = this.agentCard.capabilities?.streaming || false;
     const mappedClientTask = this.taskMap.get(requestContext.taskId);
 
+    const request: SendMessageRequest = {
+      tenant: "",
+      message: {
+        ...requestContext.userMessage,
+        taskId: mappedClientTask?.task.id || "",
+      },
+      configuration: undefined,
+      metadata: undefined,
+    };
+
     if (supportsStreaming) {
-      const stream = client.sendMessageStream({
-        message: {
-          ...requestContext.userMessage,
-          taskId: mappedClientTask?.task.id,
-        },
-      });
-      for await (const event of stream) {
+      const stream = client.sendMessageStream(request);
+      for await (const response of stream) {
+        const event = streamResponseToAgentEvent(response);
+        if (!event) {
+          continue;
+        }
         this.updateTaskMap(event, requestContext.taskId, tokenSetProvider);
         eventBus.publish(this.replaceTaskId(event, requestContext.taskId));
       }
     } else {
-      const result = await client.sendMessage({
-        message: {
-          ...requestContext.userMessage,
-          taskId: mappedClientTask?.task.id,
-        },
-      });
-
-      this.updateTaskMap(result, requestContext.taskId, tokenSetProvider);
-      eventBus.publish(this.replaceTaskId(result, requestContext.taskId));
+      const result = await client.sendMessage(request);
+      const event =
+        "id" in result ? AgentEvent.task(result) : AgentEvent.message(result);
+      this.updateTaskMap(event, requestContext.taskId, tokenSetProvider);
+      eventBus.publish(this.replaceTaskId(event, requestContext.taskId));
     }
 
     eventBus.finished();
   }
 
   public async sendMessage(
-    message: MessageSendParams,
+    request: SendMessageRequest,
     tokenSetProvider: TokenSetProvider | undefined,
     callback: (event: AgentExecutionEvent) => Promise<void>
   ) {
@@ -261,25 +321,41 @@ export class A2AClient implements RemoteClient {
       throw new Error(`Client Card not available`);
     }
 
-    if (this.agentCard.capabilities.streaming) {
-      logger().child({ message }).debug("Send message stream");
-      const stream = client.sendMessageStream(message);
-      for await (const event of stream) {
+    if (this.agentCard.capabilities?.streaming) {
+      logger().child({ request }).debug("Send message stream");
+      const stream = client.sendMessageStream(request);
+      for await (const response of stream) {
+        const event = streamResponseToAgentEvent(response);
+        if (!event) {
+          continue;
+        }
         this.updateTaskMap(event, undefined, tokenSetProvider);
         await callback(event);
       }
     } else {
-      logger().child({ message }).debug("Send message sync");
-      const result = await client.sendMessage(message);
-      await callback(result);
+      logger().child({ request }).debug("Send message sync");
+      const result = await client.sendMessage(request);
+      const event =
+        "id" in result ? AgentEvent.task(result) : AgentEvent.message(result);
+      this.updateTaskMap(event, undefined, tokenSetProvider);
+      await callback(event);
     }
   }
 
-  private replaceTaskId(event: AgentExecutionEvent, taskId: string) {
-    return {
-      ...event,
-      ...(event.kind === "task" ? { id: taskId } : { taskId: taskId }),
-    };
+  private replaceTaskId(
+    event: AgentExecutionEvent,
+    taskId: string
+  ): AgentExecutionEvent {
+    switch (event.kind) {
+      case "task":
+        return AgentEvent.task({ ...event.data, id: taskId });
+      case "statusUpdate":
+        return AgentEvent.statusUpdate({ ...event.data, taskId });
+      case "artifactUpdate":
+        return AgentEvent.artifactUpdate({ ...event.data, taskId });
+      case "message":
+        return AgentEvent.message({ ...event.data, taskId });
+    }
   }
 
   private updateTaskMap(
@@ -288,29 +364,25 @@ export class A2AClient implements RemoteClient {
     tokenSetProvider: TokenSetProvider | undefined
   ) {
     if (!taskId) {
-      if (event.kind === "task") {
-        taskId = event.id;
-      } else {
-        taskId = event.taskId;
-      }
+      taskId = taskIdOfEvent(event);
     }
     if (!taskId) {
       return;
     }
-    if (event.kind === "task" && event.status.state === "submitted") {
+    if (
+      event.kind === "task" &&
+      event.data.status?.state === TaskState.TASK_STATE_SUBMITTED
+    ) {
       this.taskMap.set(taskId, {
-        task: event,
+        task: event.data,
         tokenSetProvider,
         createdAt: Date.now(),
       });
     }
-    if (event.kind === "status-update" || event.kind === "task") {
-      switch (event.status.state) {
-        case "completed":
-        case "canceled":
-        case "failed":
-        case "rejected":
-          this.taskMap.delete(taskId);
+    if (event.kind === "statusUpdate" || event.kind === "task") {
+      const state = event.data.status?.state;
+      if (state !== undefined && TERMINAL_TASK_STATES.has(state)) {
+        this.taskMap.delete(taskId);
       }
     }
     // Sweep stale tasks
@@ -323,7 +395,7 @@ export class A2AClient implements RemoteClient {
       }
     }
   }
-  private getUserTokenSet(
+  private getUserAsAccessTokenTokenSetProvider(
     requestContext: RequestContext
   ): TokenSetProvider | undefined {
     const accessToken = requestContext.context?.user?.userName;
@@ -334,21 +406,25 @@ export class A2AClient implements RemoteClient {
     }
   }
 
+  private buildClientFactory(
+    tokenSetProvider: TokenSetProvider | undefined
+  ): ClientFactory {
+    return new ClientFactory(
+      ClientFactoryOptions.createFrom(ClientFactoryOptions.default, {
+        ...buildLegacyCompatOptions(),
+        clientConfig: {
+          interceptors: [
+            new AuthInterceptor(this.connectionOptions, tokenSetProvider),
+          ],
+        },
+      })
+    );
+  }
+
   private async connectToA2AServer(tokenSetProvider?: TokenSetProvider) {
-    let clientFactory: ClientFactory;
-    if (tokenSetProvider) {
-      clientFactory = new ClientFactory(
-        ClientFactoryOptions.createFrom(ClientFactoryOptions.default, {
-          clientConfig: {
-            interceptors: [
-              new AuthInterceptor(this.connectionOptions, tokenSetProvider),
-            ],
-          },
-        })
-      );
-    } else {
-      clientFactory = this.clientFactory;
-    }
+    const clientFactory: ClientFactory = tokenSetProvider
+      ? this.buildClientFactory(tokenSetProvider)
+      : this.clientFactory;
 
     const agentCardUrl = new URL(
       ".well-known/agent-card.json",

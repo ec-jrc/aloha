@@ -37,6 +37,8 @@ describe("provideOIDC", () => {
     delete process.env.OIDC_SCOPE;
     delete process.env.OIDC_UNKNOWN_USERS_PERMISSIONS;
     delete process.env.OIDC_IDENTITY_PROPAGATION_REGISTRAR_PATH;
+    delete process.env.OIDC_IDENTITY_PROPAGATION_SERVICE_PATH;
+    delete process.env.OIDC_USE_IDENTITY_PROPAGATION_REGISTRAR;
 
     const baseInjector = createInjector().provideValue("isProduction", false);
     const injector = provideOIDC(baseInjector);
@@ -128,17 +130,29 @@ describe("provideOIDC", () => {
 
   it("should enable identity propagation service when flag is set", () => {
     process.env.OIDC_USE_IDENTITY_PROPAGATION_SERVICE = "true";
+    process.env.OIDC_USE_IDENTITY_PROPAGATION_REGISTRAR = "false";
 
     const baseInjector = createInjector().provideValue("isProduction", false);
     const injector = provideOIDC(baseInjector);
 
     expect(injector.resolve("oidcUseIdentityPropagationService")).to.be.true;
-    expect(injector.resolve("oidcIdentityPropagationRegistrar")).to.be.a(
-      "promise"
-    );
+    expect(injector.resolve("oidcIdentityPropagationRegistrar")).to.be.undefined;
     expect(injector.resolve("oidcIdentityPropagationService")).to.be.a(
       "promise"
     );
     expect(injector.resolve("oidcAlohaTokenSetProvider")).to.be.a("function");
+  });
+
+  it("should enable identity propagation service when service path is set", () => {
+    process.env.OIDC_IDENTITY_PROPAGATION_SERVICE_PATH = "./service.js";
+    process.env.OIDC_USE_IDENTITY_PROPAGATION_REGISTRAR = "false";
+
+    const baseInjector = createInjector().provideValue("isProduction", false);
+    const injector = provideOIDC(baseInjector);
+
+    expect(injector.resolve("oidcUseIdentityPropagationService")).to.be.true;
+    expect(injector.resolve("oidcIdentityPropagationService")).to.be.a(
+      "promise"
+    );
   });
 });

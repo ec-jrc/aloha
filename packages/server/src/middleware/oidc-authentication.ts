@@ -25,11 +25,12 @@ import { resolve } from "url";
 import { injector } from "../injector/injector";
 import { getLogger } from "../injector/provide-logger";
 import {
-  createUserPrincipalFromToken,
+  createUserPrincipalFromIdentity,
   getTokenSetFromSession,
-  initOpenIdClientConfiguration,
-  isJwtTokenExpired,
+  Identity,
+  isJwtTokenSetExpired,
   OIDC_PROVIDER_NAME,
+  resolveDisplayName,
   storeTokenSetIntoSession,
   TokenSet,
   TokenSetSchema,
@@ -37,12 +38,21 @@ import {
 
 const logger = getLogger(OIDC_PROVIDER_NAME + "-MIDDLEWARE");
 
-class OidcAuthPlugin implements authentication_strategy.AuthenticationStrategy {
-  private oidcConfiguration!: openIdClient.Configuration;
-
-  async init() {
-    this.oidcConfiguration = await initOpenIdClientConfiguration();
+function safeDecodeJwt(
+  token: string | undefined
+): jose.JWTPayload | null | string {
+  if (!token) {
+    return null;
   }
+  try {
+    return jose.decodeJwt(token);
+  } catch {
+    return token;
+  }
+}
+
+class OidcAuthPlugin implements authentication_strategy.AuthenticationStrategy {
+  async init() {}
 
   // eslint-disable-next-line @typescript-eslint/require-await
   async getAuthenticationMiddleware(
@@ -60,12 +70,13 @@ class OidcAuthPlugin implements authentication_strategy.AuthenticationStrategy {
 
     router.use((req, res, next) => {
       const tokenSet = getTokenSetFromSession(req);
+
       if (
         authentication_strategy.isUserAuthenticated(req) &&
         authentication_strategy.getUserFromSession(req).provider ===
           OIDC_PROVIDER_NAME &&
         tokenSet &&
-        isJwtTokenExpired(tokenSet)
+        isJwtTokenSetExpired(tokenSet)
       ) {
         logger()
           .child({
@@ -98,7 +109,7 @@ class OidcAuthPlugin implements authentication_strategy.AuthenticationStrategy {
       };
 
       const redirectTo = await openIdClient.buildAuthorizationUrlWithPAR(
-        this.oidcConfiguration,
+        await this.getOpenIdClientConfiguration(),
         parameters
       );
 
@@ -122,14 +133,14 @@ class OidcAuthPlugin implements authentication_strategy.AuthenticationStrategy {
       );
 
       const tokens = await openIdClient.authorizationCodeGrant(
-        this.oidcConfiguration,
+        await this.getOpenIdClientConfiguration(),
         new URL(currentUrl),
         { pkceCodeVerifier: codeVerifier }
       );
 
       const log = logger().child({
         id_token: tokens.id_token ? jose.decodeJwt(tokens.id_token) : null,
-        access_token: jose.decodeJwt(tokens.access_token),
+        access_token: safeDecodeJwt(tokens.access_token),
       });
 
       const tokenSet: TokenSet = TokenSetSchema.parse(tokens);
@@ -156,14 +167,36 @@ class OidcAuthPlugin implements authentication_strategy.AuthenticationStrategy {
         return res.redirect("/unauthorised");
       }
 
-      const userPrincipal = await createUserPrincipalFromToken(
+      const decodedIdToken = jose.decodeJwt(id_token);
+
+      const username: string | undefined =
+        (decodedIdToken.username as string | undefined) ||
+        (decodedIdToken.preferred_username as string | undefined) ||
+        decodedIdToken.sub;
+
+      const identity: Identity = {
+        clientId:
+          (decodedIdToken.azp as string | undefined) ||
+          (decodedIdToken.client_id as string | undefined) ||
+          "unknown client id",
+        scope:
+          (decodedIdToken.scope as string | undefined) ||
+          injector().resolve("oidcScope"),
+        username,
+        name: resolveDisplayName(decodedIdToken, username),
+        exp: decodedIdToken.exp,
+        iat: decodedIdToken.iat,
+      };
+
+      const userPrincipal = await createUserPrincipalFromIdentity(
         id_token,
+        identity,
         getUserDetail,
         tokenSet.expires_in
       );
 
       if (!userPrincipal) {
-        log.error("Uable to fetch user principal");
+        log.error("Unable to fetch user principal");
         return res.redirect(resolve(homepage, "/unauthorised"));
       }
 
@@ -220,6 +253,16 @@ class OidcAuthPlugin implements authentication_strategy.AuthenticationStrategy {
     return {
       provider: OIDC_PROVIDER_NAME,
     };
+  }
+
+  private async getOpenIdClientConfiguration() {
+    const idp = injector().resolve("oidcIdentityPropagationService");
+    if (!idp) {
+      throw Error("IdentityPropagationService required");
+    }
+
+    const idps = await idp;
+    return await idps.getConfiguration();
   }
 }
 

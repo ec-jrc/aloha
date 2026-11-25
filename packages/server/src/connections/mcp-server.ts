@@ -1,8 +1,22 @@
+import { CallToolResultSchema } from "@modelcontextprotocol/core";
+import { NodeStreamableHTTPServerTransport } from "@modelcontextprotocol/node";
+// [SSE-SUPPORT-REMOVED] Deprecated inbound SSE transport disabled; restore together with
+// the sseRequest/messageRequest routes below and the @modelcontextprotocol/server-legacy dependency.
+// import { SSEServerTransport } from "@modelcontextprotocol/server-legacy/sse";
+import {
+  AuthInfo,
+  Server,
+  Tool,
+  CallToolRequest,
+  CallToolResult,
+  isInitializeRequest,
+} from "@modelcontextprotocol/server";
+
 /*
 Copyright (C) 2025 European Union
- 
+
 Licensed under the EUPL, Version 1.2 or – as soon they will be approved by the
-European Commission – subsequent versions of the EUPL (the “Licence”);
+European Commission – subsequent versions of the EUPL (the “Licence);
 You may not use this work except in compliance with the Licence.
 You may obtain a copy of the Licence at:
 * https://joinup.ec.europa.eu/collection/eupl/eupl-text-eupl-12 *
@@ -12,54 +26,41 @@ the Licence is distributed on an “AS IS” basis, WITHOUT WARRANTIES OR CONDIT
 OF ANY KIND, either express or implied. See the Licence for the specific language
 governing permissions and limitations under the Licence.
 */
-
-import { Server } from "@modelcontextprotocol/sdk/server/index.js";
-import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
-import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import * as mcpTypes from "@modelcontextprotocol/sdk/types.js";
-import {
-  CallToolRequestSchema,
-  ListPromptsRequestSchema,
-  ListResourcesRequestSchema,
-  ListResourceTemplatesRequestSchema,
-  ListToolsRequestSchema,
-  LoggingMessageNotificationSchema,
-  ProgressNotificationSchema,
-  ReadResourceRequestSchema,
-} from "@modelcontextprotocol/sdk/types.js";
 import { authentication_strategy, schemas } from "aloha-shared";
 import { NextFunction, Request, Response } from "express";
-import { ServerResponse } from "http";
+// [SSE-SUPPORT-REMOVED] ServerResponse was only used by the legacy SSE transport.
+// import { ServerResponse } from "http";
 import MiniSearch, { SearchResult } from "minisearch";
 import { randomUUID } from "node:crypto";
 import z from "zod";
 import { MCPBaseServerWithId } from "../../../aloha-shared/dist/schemas";
 import MCPManager from "../connections/mcp-manager";
+import { serveRegistry } from "../endpoints/servers-proxy-utils";
 import { verifyPermission } from "../endpoints/utils";
 import { injector } from "../injector/injector";
 import { getLogger } from "../injector/provide-logger";
-import { TokenSetProvider } from "../middleware/oidc/oidc-support";
-import { A2AClient } from "./a2a-client";
-import MCPClient from "./mcp-client";
+import { TokenSet, TokenSetProvider } from "../middleware/oidc/oidc-support";
 import {
   filterOnlyMCPClient,
   findConnectedConnection,
 } from "../utils/connection-utils";
-import { serveRegistry } from "../endpoints/servers-proxy-utils";
+import { A2AClient } from "./a2a-client";
+import MCPClient from "./mcp-client";
 
 const logger = getLogger("MCPSERVER");
 
 interface CustomRouter {
-  sseRequest: (
-    req: Request,
-    res: Response,
-    next: NextFunction
-  ) => Promise<void>;
-  messageRequest: (
-    req: Request,
-    res: Response,
-    next: NextFunction
-  ) => Promise<void>;
+  // [SSE-SUPPORT-REMOVED] Legacy SSE router entries; restore with the /sse and /messages routes.
+  // sseRequest: (
+  //   req: Request,
+  //   res: Response,
+  //   next: NextFunction
+  // ) => Promise<void>;
+  // messageRequest: (
+  //   req: Request,
+  //   res: Response,
+  //   next: NextFunction
+  // ) => Promise<void>;
   httpPostRequest: (
     req: Request,
     res: Response,
@@ -104,14 +105,13 @@ const SESSION_REAP_INTERVAL_MS = parseInt(
   10
 );
 
-const DISCOVER_TOOLS_DEFINITION: mcpTypes.Tool = {
+const DISCOVER_TOOLS_DEFINITION: Tool = {
   name: "discover_tools",
-  description: `Search for tools across all accessible MCP servers.
+  description: `Search for tools.
 
 Use this tool to find relevant tools when you need to:
 - Find tools by functionality (e.g., "file operations", "database queries")
 - Search by technology or domain (e.g., "kubernetes", "aws", "git")
-- Locate tools from specific servers
 
 The search examines tool names, descriptions, and parameter information.
 Results are ranked by relevance with exact name matches prioritized.
@@ -120,7 +120,6 @@ Query tips for best results:
 - Use specific keywords: "create file" instead of just "file"
 - Use domain terms: "kubernetes deploy" for K8s tools
 - Use "*" to list all available tools
-- Combine with serverNames filter to search specific servers
 
 Example queries:
 - "create file" - finds file creation tools
@@ -135,16 +134,6 @@ Example queries:
         description:
           "Search query to match against tool names, descriptions, and parameters. Use '*' to list all tools.",
       },
-      serverNames: {
-        type: "array",
-        items: { type: "string" },
-        description: "Optional: limit search to specific server names",
-      },
-      tags: {
-        type: "array",
-        items: { type: "string" },
-        description: "Optional: limit search to servers with specific tags",
-      },
       limit: {
         type: "number",
         description: "Maximum number of results (default: 5, min:1, max: 100)",
@@ -158,29 +147,19 @@ Example queries:
   },
 };
 
-const INVOKE_TOOL_DEFINITION: mcpTypes.Tool = {
+const INVOKE_TOOL_DEFINITION: Tool = {
   name: "invoke_tool",
-  description: `Execute a tool by its qualified identifier.
+  description: `Execute a tool by its name and parameters.
 
-Use this after discovering tools with discover_tools. The toolId format is:
-  {serverName}.{toolName}
+Use this after discovering tools with discover_tools.
 
-Example: "my-server.create_file"
-
-The tool will be executed on the appropriate server with your identity
-propagated for authentication if configured.
-
-Important:
-- You must have execute permission on the target server
-- Arguments must match the tool's input schema (from discover_tools)
-- Results are returned in the same format as the underlying tool`,
+Important: arguments must match the tool's input schema (from discover_tools).`,
   inputSchema: {
     type: "object",
     properties: {
-      toolId: {
+      name: {
         type: "string",
-        description:
-          "Qualified tool identifier in format 'serverPath.toolName'",
+        description: "Fully qualified tool name",
       },
       arguments: {
         type: "object",
@@ -188,14 +167,14 @@ Important:
           "Arguments to pass to the tool (must match tool's input schema)",
       },
     },
-    required: ["toolId"],
+    required: ["name"],
   },
 };
 
 type SearchDoc = {
   id: number;
   mcpClient: MCPClient;
-  tool: mcpTypes.Tool;
+  tool: Tool;
   toolName: string;
   toolDesc: string;
   paramNames: string;
@@ -205,6 +184,15 @@ type SearchDoc = {
 class ServerSession {
   server: Server;
   clients: { [k: string]: MCPClient } = {};
+  /**
+   * In-flight per-client initializations, keyed by connection id. Used to
+   * deduplicate concurrent requests (e.g. the MCP client firing
+   * resources/list + tools/list + prompts/list in parallel) so a single
+   * dedicated OIDC client is connected and its lists populated once, instead
+   * of each request racing to create its own client and returning partial
+   * (empty) results.
+   */
+  pendingClients: { [k: string]: Promise<MCPClient> } = {};
   lastActivity: number = Date.now();
 
   public constructor(server: Server) {
@@ -212,9 +200,8 @@ class ServerSession {
   }
 
   public get transport() {
-    return this.server.transport as
-      | SSEServerTransport
-      | StreamableHTTPServerTransport;
+    // [SSE-SUPPORT-REMOVED] Union with SSEServerTransport removed; restore when SSE support returns.
+    return this.server.transport as NodeStreamableHTTPServerTransport;
   }
 
   public touch() {
@@ -236,15 +223,13 @@ class ServerSession {
 }
 
 const InvokeToolRequestSchema = z.object({
-  toolId: z.string(),
+  name: z.string(),
   arguments: z.record(z.string(), z.unknown()).optional(),
 });
 type InvokeToolRequest = z.infer<typeof InvokeToolRequestSchema>;
 
 const DiscoverRequestSchema = z.object({
   query: z.string(),
-  serverNames: z.array(z.string()).optional(),
-  tags: z.array(z.string()).optional(),
   limit: z.number().min(1).max(100).default(5),
   offset: z.number().default(0),
 });
@@ -254,10 +239,10 @@ const invokeTool = async (
   req: Request,
   request: InvokeToolRequest,
   connections: MCPClient[]
-): Promise<mcpTypes.CallToolResult> => {
+): Promise<CallToolResult> => {
   const clientToCall = connections.find((e) => {
     const prefix = getPrefixForNamedItems(e.connectionOptions);
-    if (request.toolId.startsWith(prefix)) {
+    if (request.name.startsWith(prefix)) {
       return true;
     }
 
@@ -276,20 +261,17 @@ const invokeTool = async (
     throw new Error(`User has no right to call the tool`);
   }
 
-  const toolCall: mcpTypes.CallToolRequest = {
+  const toolCall: CallToolRequest = {
     method: "tools/call",
     params: {
-      name: request.toolId.replace(
+      name: request.name.replace(
         getPrefixForNamedItems(clientToCall.connectionOptions),
         ""
       ),
       arguments: request.arguments,
     },
   };
-  const result = await clientToCall.sendRequest(
-    toolCall,
-    mcpTypes.CallToolResultSchema
-  );
+  const result = await clientToCall.sendRequest(toolCall, CallToolResultSchema);
   return result;
 };
 
@@ -297,7 +279,7 @@ const discoverTools = async (
   req: Request,
   request: DiscoverRequest,
   connections: MCPClient[]
-): Promise<mcpTypes.CallToolResult> => {
+): Promise<CallToolResult> => {
   const log = logger().child({
     query: request.query,
     limit: request.limit,
@@ -365,7 +347,7 @@ const discoverTools = async (
               score: 100,
             }) as SearchResult & {
               mcpClient: MCPClient;
-              tool: mcpTypes.Tool;
+              tool: Tool;
             }
         )
       : (minisearch.search(query, {
@@ -376,9 +358,7 @@ const discoverTools = async (
             paramDescs: 1,
           },
           fuzzy: 0.2,
-        }) as Array<
-          SearchResult & { mcpClient: MCPClient; tool: mcpTypes.Tool }
-        >);
+        }) as Array<SearchResult & { mcpClient: MCPClient; tool: Tool }>);
 
   const results = resultsUncapped.filter((e) => e.score > 1);
   const total = results.length;
@@ -416,10 +396,10 @@ const discoverTools = async (
 //   req: Request,
 //   request: DiscoverRequest,
 //   connections: MCPClient[]
-// ): Promise<mcpTypes.CallToolResult> => {
+// ): Promise<CallToolResult> => {
 //   const discoveredTools: {
 //     mcpClient: MCPClient;
-//     tool: mcpTypes.Tool;
+//     tool: Tool;
 //     points: number;
 //   }[] = [];
 //
@@ -589,51 +569,45 @@ const createHubSessionServer: CreateSessionServerFunction = (
     }
   );
 
-  sessionServer.setRequestHandler(
-    ListToolsRequestSchema,
-    (_request, context) => {
-      if (!context.sessionId) throw new Error("Must provide a session");
+  sessionServer.setRequestHandler("tools/list", (_request, context) => {
+    if (!context.sessionId) throw new Error("Must provide a session");
 
-      return {
-        tools: [DISCOVER_TOOLS_DEFINITION, INVOKE_TOOL_DEFINITION],
-      };
+    return {
+      tools: [DISCOVER_TOOLS_DEFINITION, INVOKE_TOOL_DEFINITION],
+    };
+  });
+
+  sessionServer.setRequestHandler("tools/call", async (request, context) => {
+    if (!context.sessionId) throw new Error("Must provide a session");
+
+    const connections = await getConnectionsForSession(
+      context.sessionId,
+      getUserTokenSetProvider(context)
+    );
+    const mcpConnections = filterOnlyMCPClient(connections);
+
+    const req = {
+      ...context.http?.req,
+      auth: context.http?.authInfo,
+    } as unknown as Request;
+
+    switch (request.params.name) {
+      case "discover_tools":
+        return await discoverTools(
+          req,
+          DiscoverRequestSchema.parse(request.params.arguments),
+          mcpConnections
+        );
+      case "invoke_tool":
+        return await invokeTool(
+          req,
+          InvokeToolRequestSchema.parse(request.params.arguments),
+          mcpConnections
+        );
+      default:
+        throw new Error("Unknown tool: " + request.params.name);
     }
-  );
-
-  sessionServer.setRequestHandler(
-    CallToolRequestSchema,
-    async (request, context) => {
-      if (!context.sessionId) throw new Error("Must provide a session");
-
-      const connections = await getConnectionsForSession(
-        context.sessionId,
-        getUserTokenSet(context.requestInfo)
-      );
-      const mcpConnections = filterOnlyMCPClient(connections);
-
-      const req = {
-        ...context.requestInfo,
-        auth: context.authInfo,
-      } as unknown as Request;
-
-      switch (request.params.name) {
-        case "discover_tools":
-          return await discoverTools(
-            req,
-            DiscoverRequestSchema.parse(request.params.arguments),
-            mcpConnections
-          );
-        case "invoke_tool":
-          return await invokeTool(
-            req,
-            InvokeToolRequestSchema.parse(request.params.arguments),
-            mcpConnections
-          );
-        default:
-          throw new Error("Unknown tool: " + request.params.name);
-      }
-    }
-  );
+  });
 
   return sessionServer;
 };
@@ -657,31 +631,28 @@ const createStandardSessionServer: CreateSessionServerFunction = (
     }
   );
 
+  sessionServer.setRequestHandler("prompts/list", async (_request, context) => {
+    if (!context.sessionId) throw new Error("Must provide a session");
+
+    const connections = await getConnectionsForSession(
+      context.sessionId,
+      getUserTokenSetProvider(context)
+    );
+    return {
+      prompts: filterOnlyMCPClient(connections)
+        .map((c) => prefixNamedItems(c.connectionOptions, c.prompts))
+        .flat(),
+    };
+  });
+
   sessionServer.setRequestHandler(
-    ListPromptsRequestSchema,
+    "resources/templates/list",
     async (_request, context) => {
       if (!context.sessionId) throw new Error("Must provide a session");
 
       const connections = await getConnectionsForSession(
         context.sessionId,
-        getUserTokenSet(context.requestInfo)
-      );
-      return {
-        prompts: filterOnlyMCPClient(connections)
-          .map((c) => prefixNamedItems(c.connectionOptions, c.prompts))
-          .flat(),
-      };
-    }
-  );
-
-  sessionServer.setRequestHandler(
-    ListResourceTemplatesRequestSchema,
-    async (_request, context) => {
-      if (!context.sessionId) throw new Error("Must provide a session");
-
-      const connections = await getConnectionsForSession(
-        context.sessionId,
-        getUserTokenSet(context.requestInfo)
+        getUserTokenSetProvider(context)
       );
 
       return {
@@ -695,13 +666,13 @@ const createStandardSessionServer: CreateSessionServerFunction = (
   );
 
   sessionServer.setRequestHandler(
-    ListResourcesRequestSchema,
+    "resources/list",
     async (_request, context) => {
       if (!context.sessionId) throw new Error("Must provide a session");
 
       const connections = await getConnectionsForSession(
         context.sessionId,
-        getUserTokenSet(context.requestInfo)
+        getUserTokenSetProvider(context)
       );
       return {
         resources: filterOnlyMCPClient(connections)
@@ -712,12 +683,12 @@ const createStandardSessionServer: CreateSessionServerFunction = (
   );
 
   sessionServer.setRequestHandler(
-    ReadResourceRequestSchema,
+    "resources/read",
     async (request, context) => {
       if (!context.sessionId) throw new Error("Must provide a session");
       const connections = await getConnectionsForSession(
         context.sessionId,
-        getUserTokenSet(context.requestInfo)
+        getUserTokenSetProvider(context)
       );
 
       for (const c of filterOnlyMCPClient(connections)) {
@@ -731,91 +702,79 @@ const createStandardSessionServer: CreateSessionServerFunction = (
     }
   );
 
-  sessionServer.setRequestHandler(
-    ListToolsRequestSchema,
-    async (_request, context) => {
-      if (!context.sessionId) throw new Error("Must provide a session");
+  sessionServer.setRequestHandler("tools/list", async (_request, context) => {
+    if (!context.sessionId) throw new Error("Must provide a session");
 
-      const connections = await getConnectionsForSession(
-        context.sessionId,
-        getUserTokenSet(context.requestInfo)
-      );
-      return {
-        tools: filterOnlyMCPClient(connections)
-          .map((c) => prefixNamedItems(c.connectionOptions, c.tools))
-          .flat(),
-      };
-    }
-  );
+    const connections = await getConnectionsForSession(
+      context.sessionId,
+      getUserTokenSetProvider(context)
+    );
+    return {
+      tools: filterOnlyMCPClient(connections)
+        .map((c) => prefixNamedItems(c.connectionOptions, c.tools))
+        .flat(),
+    };
+  });
 
-  sessionServer.setRequestHandler(
-    CallToolRequestSchema,
-    async (request, context) => {
-      if (!context.sessionId) throw new Error("Must provide a session");
-      const connections = await getConnectionsForSession(
-        context.sessionId,
-        getUserTokenSet(context.requestInfo)
-      );
+  sessionServer.setRequestHandler("tools/call", async (request, context) => {
+    if (!context.sessionId) throw new Error("Must provide a session");
+    const connections = await getConnectionsForSession(
+      context.sessionId,
+      getUserTokenSetProvider(context)
+    );
 
-      for (const c of filterOnlyMCPClient(connections)) {
-        const prefix = getPrefixForNamedItems(c.connectionOptions);
+    for (const c of filterOnlyMCPClient(connections)) {
+      const prefix = getPrefixForNamedItems(c.connectionOptions);
 
-        const tool = c.tools.find(
-          (t) => prefix + t.name === request.params.name
-        );
-        if (tool) {
-          try {
-            c.client.setNotificationHandler(
-              LoggingMessageNotificationSchema,
-              async (notification) => {
-                logger().debug(
-                  "LoggingMessageNotificationSchema",
-                  notification
-                );
-                await context.sendNotification(notification);
-              }
-            );
-            c.client.setNotificationHandler(
-              ProgressNotificationSchema,
-              async (notification) => {
-                logger().debug("ProgressNotificationSchema", notification);
-                await context.sendNotification(notification);
-              }
-            );
-            c.client.fallbackNotificationHandler = async (notification) => {
-              logger().debug(notification);
-              await context.sendNotification(notification);
-            };
+      const tool = c.tools.find((t) => prefix + t.name === request.params.name);
+      if (tool) {
+        try {
+          c.client.setNotificationHandler(
+            "notifications/message",
+            async (notification) => {
+              logger().debug("LoggingMessageNotificationSchema", notification);
+              await context.mcpReq.notify(notification);
+            }
+          );
+          c.client.setNotificationHandler(
+            "notifications/progress",
+            async (notification) => {
+              logger().debug("ProgressNotificationSchema", notification);
+              await context.mcpReq.notify(notification);
+            }
+          );
+          c.client.fallbackNotificationHandler = async (notification) => {
+            logger().debug(notification);
+            await context.mcpReq.notify(notification);
+          };
 
-            const response = await c.client.callTool(
-              {
-                ...request.params,
-                name: request.params.name.replace(prefix, ""),
+          const response = await c.client.callTool(
+            {
+              ...request.params,
+              name: request.params.name.replace(prefix, ""),
+            },
+            {
+              onprogress: (progress) => {
+                context.mcpReq
+                  .notify({
+                    params: progress,
+                    method: "notifications/progress",
+                  })
+                  .then(() => {})
+                  .catch((err) => logger().error(err));
               },
-              undefined,
-              {
-                onprogress: (progress) => {
-                  context
-                    .sendNotification({
-                      params: progress,
-                      method: "notifications/progress",
-                    })
-                    .then(() => {})
-                    .catch((err) => logger().error(err));
-                },
-              }
-            );
-            return response;
-          } finally {
-            c.client.removeNotificationHandler("notifications/message");
-            c.client.removeNotificationHandler("notifications/progress");
-            c.client.fallbackNotificationHandler = undefined;
-          }
+            }
+          );
+          return response;
+        } finally {
+          c.client.removeNotificationHandler("notifications/message");
+          c.client.removeNotificationHandler("notifications/progress");
+          c.client.fallbackNotificationHandler = undefined;
         }
       }
-      throw new Error("Tool not found or server not connected");
     }
-  );
+    throw new Error("Tool not found or server not connected");
+  });
 
   return sessionServer;
 };
@@ -840,7 +799,10 @@ class MCPServer {
     return serveRegistry(req, res, this);
   }
 
-  public serve(messagesUrl: string) {
+  // [SSE-SUPPORT-REMOVED] messagesUrl was only used by the legacy SSE transport; parameter kept
+  // (underscore-prefixed) so call sites in mcp-manager.ts do not need rework when restoring.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  public serve(_messagesUrl: string) {
     if (!this.router) {
       const serverSessions = this.serverSessions;
 
@@ -851,7 +813,7 @@ class MCPServer {
 
       const getConnectionsForSession = async (
         sessionId: string,
-        tokenSet: TokenSetProvider | undefined,
+        tokenSetProvider: TokenSetProvider | undefined,
         forceRefresh: boolean = false
       ): Promise<(MCPClient | A2AClient)[]> => {
         const connections = findConnectedConnection(
@@ -871,7 +833,7 @@ class MCPServer {
           }
 
           const needsDedicatedClient =
-            tokenSet &&
+            tokenSetProvider &&
             c.connectionOptions.authentication?.type === "oidc_client_secret";
 
           if (!needsDedicatedClient) {
@@ -901,17 +863,34 @@ class MCPServer {
             continue;
           }
 
+          // Deduplicate concurrent initializations: if another in-flight
+          // request is already connecting this client for the session, await
+          // the same promise instead of creating a second client. This fixes
+          // the race where parallel resources/list + tools/list + prompts/list
+          // requests each created their own dedicated OIDC client and returned
+          // partial/empty lists.
+          if (c.id in serverSessions[sessionId].pendingClients) {
+            initPromises.push(serverSessions[sessionId].pendingClients[c.id]);
+            continue;
+          }
+
           const client = new MCPClient(
             c.connectionOptions as schemas.MCPBaseConnectionWithId,
-            tokenSet
+            tokenSetProvider
           );
-          initPromises.push(
-            client.connectClient().then(async () => {
-              serverSessions[sessionId].clients[c.id] = client;
+          const initPromise = client
+            .connectClient()
+            .then(async () => {
+              // Populate tools/prompts/resources before the client is used.
               await client.pingClient();
+              serverSessions[sessionId].clients[c.id] = client;
               return client;
             })
-          );
+            .finally(() => {
+              delete serverSessions[sessionId].pendingClients[c.id];
+            });
+          serverSessions[sessionId].pendingClients[c.id] = initPromise;
+          initPromises.push(initPromise);
         }
 
         const initialized = await Promise.all(initPromises);
@@ -932,101 +911,103 @@ class MCPServer {
       }, SESSION_REAP_INTERVAL_MS);
 
       this.router = {
-        sseRequest: async (_req: Request, res: ServerResponse) => {
-          logger().debug("Received sse connection request");
-          const transport = new SSEServerTransport(messagesUrl, res);
-          const sessionServer = createSessionServer(
-            this.options,
-            getConnectionsForSession
-          );
-          try {
-            await sessionServer.connect(transport);
-            // Store session AFTER successful connect
-            serverSessions[transport.sessionId] = new ServerSession(
-              sessionServer
-            );
-            logger().debug(
-              { sessionId: transport.sessionId },
-              "Creating transport"
-            );
-            res.on("close", () => {
-              logger().debug(
-                { sessionId: transport.sessionId },
-                "Disconnecting transport"
-              );
-              const session = serverSessions[transport.sessionId];
-              delete serverSessions[transport.sessionId];
-              session?.close(true).catch((err) => logger().error(err));
-            });
-          } catch (error) {
-            logger().error(error);
-            // Clean up on failure
-            await sessionServer.close().catch(() => {});
-            res.end();
-          }
-        },
-        messageRequest: async (req, res) => {
-          const sessionId = req.query.sessionId as string;
-          const log = logger().child({ sessionId });
-
-          log.debug(`Received message`);
-
-          try {
-            if (!sessionId || !serverSessions[sessionId]) {
-              log.error(`No session found`);
-              res.status(404).json({
-                jsonrpc: "2.0",
-                error: {
-                  code: -32000,
-                  message: `No session found for ` + sessionId,
-                },
-                id: null,
-              });
-              return;
-            }
-            const transport = serverSessions[sessionId].transport;
-            if (!transport) {
-              log.error(`No transport found`);
-              res.status(404).json({
-                jsonrpc: "2.0",
-                error: {
-                  code: -32000,
-                  message: `No transport found for session ` + sessionId,
-                },
-                id: null,
-              });
-              return;
-            }
-            if (!(transport instanceof SSEServerTransport)) {
-              log.error(`Transport type does not match request`);
-              res.status(404).json({
-                jsonrpc: "2.0",
-                error: {
-                  code: -32000,
-                  message:
-                    `Message endpoint called for non SSE transport ` +
-                    sessionId,
-                },
-                id: null,
-              });
-              return;
-            }
-            serverSessions[sessionId].touch();
-            await transport.handlePostMessage(req, res);
-          } catch (error) {
-            log.error(error);
-            res.status(500).json({
-              jsonrpc: "2.0",
-              error: {
-                code: -32000,
-                message: "Internal server error",
-              },
-              id: null,
-            });
-            // res.status(500).json({ error }).end();
-          }
-        },
-        httpPostRequest: async (req: Request, res) => {
+        // [SSE-SUPPORT-REMOVED] Legacy inbound SSE endpoint; restore together with the /:path/sse and
+      // /:path/messages routes in servers-proxy-mcp.ts and the @modelcontextprotocol/server-legacy dependency.
+      // sseRequest: async (_req: Request, res: ServerResponse) => {
+      //   logger().debug("Received sse connection request");
+      //   const transport = new SSEServerTransport(messagesUrl, res);
+      //   const sessionServer = createSessionServer(
+      //     this.options,
+      //     getConnectionsForSession
+      //   );
+      //   try {
+      //     await sessionServer.connect(transport);
+      //     // Store session AFTER successful connect
+      //     serverSessions[transport.sessionId] = new ServerSession(
+      //       sessionServer
+      //     );
+      //     logger().debug(
+      //       { sessionId: transport.sessionId },
+      //       "Creating transport"
+      //     );
+      //     res.on("close", () => {
+      //       logger().debug(
+      //         { sessionId: transport.sessionId },
+      //         "Disconnecting transport"
+      //       );
+      //       const session = serverSessions[transport.sessionId];
+      //       delete serverSessions[transport.sessionId];
+      //       session?.close(true).catch((err) => logger().error(err));
+      //     });
+      //   } catch (error) {
+      //     logger().error(error);
+      //     // Clean up on failure
+      //     await sessionServer.close().catch(() => {});
+      //     res.end();
+      //   }
+      // },
+      // messageRequest: async (req, res) => {
+      //   const sessionId = req.query.sessionId as string;
+      //   const log = logger().child({ sessionId });
+      //
+      //   log.debug(`Received message`);
+      //
+      //   try {
+      //     if (!sessionId || !serverSessions[sessionId]) {
+      //       log.error(`No session found`);
+      //       res.status(404).json({
+      //         jsonrpc: "2.0",
+      //         error: {
+      //           code: -32000,
+      //           message: `No session found for ` + sessionId,
+      //         },
+      //         id: null,
+      //       });
+      //       return;
+      //     }
+      //     const transport = serverSessions[sessionId].transport;
+      //     if (!transport) {
+      //       log.error(`No transport found`);
+      //       res.status(404).json({
+      //         jsonrpc: "2.0",
+      //         error: {
+      //           code: -32000,
+      //           message: `No transport found for session ` + sessionId,
+      //         },
+      //         id: null,
+      //       });
+      //       return;
+      //     }
+      //     if (!(transport instanceof SSEServerTransport)) {
+      //       log.error(`Transport type does not match request`);
+      //       res.status(404).json({
+      //         jsonrpc: "2.0",
+      //         error: {
+      //           code: -32000,
+      //           message:
+      //             `Message endpoint called for non SSE transport ` +
+      //             sessionId,
+      //         },
+      //         id: null,
+      //       });
+      //       return;
+      //     }
+      //     serverSessions[sessionId].touch();
+      //     await transport.handlePostMessage(req, res);
+      //   } catch (error) {
+      //     log.error(error);
+      //     res.status(500).json({
+      //       jsonrpc: "2.0",
+      //       error: {
+      //         code: -32000,
+      //         message: "Internal server error",
+      //       },
+      //       id: null,
+      //     });
+      //     // res.status(500).json({ error }).end();
+      //   }
+      // },
+      httpPostRequest: async (req: Request, res) => {
           try {
             const rawBody = await readRawBody(req);
             // console.log(rawBody);
@@ -1071,7 +1052,7 @@ class MCPServer {
 
           // Check for existing session ID
           const sessionId = req.headers["mcp-session-id"] as string | undefined;
-          let transport: StreamableHTTPServerTransport;
+          let transport: NodeStreamableHTTPServerTransport;
           if (sessionId) {
             // Client provided a session ID
             if (!serverSessions[sessionId]) {
@@ -1089,7 +1070,7 @@ class MCPServer {
             if (
               !(
                 serverSessions[sessionId].transport instanceof
-                StreamableHTTPServerTransport
+                NodeStreamableHTTPServerTransport
               )
             ) {
               // Session exists but wrong transport type
@@ -1106,14 +1087,14 @@ class MCPServer {
             // Reuse existing transport
             serverSessions[sessionId].touch();
             transport = serverSessions[sessionId].transport;
-          } else if (mcpTypes.isInitializeRequest(req.body)) {
+          } else if (isInitializeRequest(req.body)) {
             // New initialization request
             const sessionServer = createSessionServer(
               this.options,
               getConnectionsForSession
             );
             const newSessionId = randomUUID();
-            transport = new StreamableHTTPServerTransport({
+            transport = new NodeStreamableHTTPServerTransport({
               sessionIdGenerator: () => newSessionId,
               onsessioninitialized: (initializedSessionId) => {
                 logger().debug(
@@ -1177,7 +1158,7 @@ class MCPServer {
           const log = logger().child({ sessionId });
 
           const transport = serverSessions[sessionId].transport;
-          if (!(transport instanceof StreamableHTTPServerTransport)) {
+          if (!(transport instanceof NodeStreamableHTTPServerTransport)) {
             log.error(`Transport type does not match request`);
             res
               .status(405)
@@ -1204,7 +1185,7 @@ class MCPServer {
 
           const session = serverSessions[sessionId];
           const transport = session.transport;
-          if (!(transport instanceof StreamableHTTPServerTransport)) {
+          if (!(transport instanceof NodeStreamableHTTPServerTransport)) {
             log.error(`Transport type does not match request`);
             res
               .status(405)
@@ -1256,32 +1237,71 @@ function injectAuthFieldWithSessionUser(req: Request) {
   ) {
     const user = authentication_strategy.getUserFromSession(req);
     req.auth = {
-      token: "",
-      clientId: "",
+      token: "token not set",
+      clientId: "client id not set",
       scopes: [],
       extra: { user },
     };
   }
 }
 
-function getUserTokenSet(
-  requestInfo: mcpTypes.RequestInfo | undefined
-): TokenSetProvider {
-  if (requestInfo) {
-    const authorization = requestInfo.headers["authorization"] as string;
-    if (authorization) {
-      const parts = authorization.split(" ");
-      return () =>
-        Promise.resolve({
-          access_token: parts[1] || "",
-        });
-    }
+/**
+ * Extracts a bearer access token from an MCP request's Authorization header.
+ * Returns undefined when there is no header or it is not a Bearer token.
+ */
+function extractBearerToken(
+  request: globalThis.Request | undefined
+): string | undefined {
+  const header = request?.headers.get("authorization");
+  if (typeof header !== "string") {
+    return undefined;
+  }
+  const [scheme, value] = header.split(" ");
+  return scheme?.toLowerCase() === "bearer" && value ? value : undefined;
+}
+
+/**
+ * Builds a TokenSetProvider for a single MCP request, or `undefined` when no
+ * usable end-user token is available.
+ *
+ * Resolution order (driven by the data present, not by the header alone):
+ *  1. A TokenSet already attached to `authInfo.extra.tokenSet` by the auth
+ *     middleware -> use it directly.
+ *  2. A raw bearer token in the Authorization header -> resolve it live via
+ *     the IdentityPropagationService to obtain a reusable TokenSet.
+ *  3. Nothing usable -> `undefined`, so callers fall back to the shared,
+ *     non-dedicated connection instead of creating a per-user client.
+ */
+function getUserTokenSetProvider(
+  context:
+    | { http?: { req?: globalThis.Request; authInfo?: AuthInfo } }
+    | undefined
+): TokenSetProvider | undefined {
+  const attachedTokenSet = context?.http?.authInfo?.extra?.tokenSet as
+    | TokenSet
+    | undefined;
+  if (attachedTokenSet) {
+    return () => Promise.resolve(attachedTokenSet);
   }
 
-  return () =>
-    Promise.resolve({
-      access_token: "",
-    });
+  const bearerToken = extractBearerToken(context?.http?.req);
+  if (bearerToken) {
+    return async () => {
+      const idps = await injector().resolve("oidcIdentityPropagationService");
+      if (!idps) {
+        throw new Error(
+          "No IdentityPropagationService configured to resolve the bearer token"
+        );
+      }
+      const { tokenSet } = await idps.resolveToken(bearerToken);
+      if (!tokenSet) {
+        throw new Error("resolveToken did not return a TokenSet");
+      }
+      return tokenSet;
+    };
+  }
+
+  return undefined;
 }
 
 function getPrefixForNamedItems<U extends { name: string }>(prefix: U) {

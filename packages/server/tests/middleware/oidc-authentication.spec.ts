@@ -19,7 +19,7 @@ import { Request, Response } from "express";
 import { authentication_strategy } from "aloha-shared";
 import oidcAuthPlugin from "../../src/middleware/oidc-authentication";
 import {
-  isJwtTokenExpired,
+  isJwtTokenSetExpired,
   OIDC_PROVIDER_NAME,
   TokenSetSchema,
   storeTokenSetIntoSession,
@@ -111,23 +111,25 @@ describe("oidc-authentication", () => {
       });
     });
 
-    describe("isJwtTokenExpired", () => {
+    describe("isJwtTokenSetExpired", () => {
       it("should return true for expired token", () => {
         const payload = { exp: Math.floor(Date.now() / 1000) - 3600 };
         const token = `${btoa(JSON.stringify({ alg: "none" }))}.${btoa(JSON.stringify(payload))}.`;
-        expect(isJwtTokenExpired(token)).to.be.true;
+        expect(isJwtTokenSetExpired({ access_token: token })).to.be.true;
       });
 
       it("should return false for valid token", () => {
         const payload = { exp: Math.floor(Date.now() / 1000) + 3600 };
         const token = `${btoa(JSON.stringify({ alg: "none" }))}.${btoa(JSON.stringify(payload))}.`;
-        expect(isJwtTokenExpired(token)).to.be.false;
+        expect(isJwtTokenSetExpired({ access_token: token })).to.be.false;
       });
 
-      it("should accept a TokenSet object", () => {
-        const payload = { exp: Math.floor(Date.now() / 1000) - 100 };
-        const accessToken = `${btoa(JSON.stringify({ alg: "none" }))}.${btoa(JSON.stringify(payload))}.`;
-        expect(isJwtTokenExpired({ access_token: accessToken })).to.be.true;
+      it("should check id_token before access_token", () => {
+        const expiredAccess = `${btoa(JSON.stringify({ alg: "none" }))}.${btoa(JSON.stringify({ exp: Math.floor(Date.now() / 1000) - 100 }))}.`;
+        const validId = `${btoa(JSON.stringify({ alg: "none" }))}.${btoa(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 3600 }))}.`;
+        expect(
+          isJwtTokenSetExpired({ access_token: expiredAccess, id_token: validId })
+        ).to.be.false;
       });
     });
 

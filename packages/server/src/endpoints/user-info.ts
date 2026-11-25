@@ -83,7 +83,7 @@ export function userInfoRouter() {
         ...userSession,
         displayName: user?.fullName || userSession.displayName,
         projects,
-      } as authentication_strategy.UserPrincipalWithProjects);
+      });
     } else {
       res.status(204).end();
     }

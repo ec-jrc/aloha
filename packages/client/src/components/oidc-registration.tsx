@@ -214,7 +214,7 @@ export function OIDCRegistration({ item }: Props) {
                     ? "Registered"
                     : registrationStatus === false
                       ? "Not registered"
-                      : "Loading..."}
+                      : "Registrar not available"}
               </dd>
             </div>
           </div>

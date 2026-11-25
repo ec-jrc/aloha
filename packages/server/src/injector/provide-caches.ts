@@ -16,6 +16,7 @@ governing permissions and limitations under the Licence.
 import { authentication_strategy, schemas } from "aloha-shared";
 import { Injector, Scope } from "typed-inject";
 import { Cache } from "../cache/cache-nodecache";
+import { TokenResolutionResult } from "../middleware/oidc/identity-propagation-service";
 
 export function provideCaches<T>(injector: Injector<T>) {
   return (
@@ -50,5 +51,10 @@ export function provideCaches<T>(injector: Injector<T>) {
       // .provideClass("tokensCache", Cache<schemas.JWTTokenWithId>, Scope.Singleton)
       .provideClass("usersCache", Cache<schemas.UserWithId>, Scope.Singleton)
       .provideClass("agentsCache", Cache<schemas.AgentWithId>, Scope.Singleton)
+      .provideClass(
+        "oidcTokenResolutionCache",
+        Cache<TokenResolutionResult>,
+        Scope.Singleton
+      )
   );
 }

@@ -1,16 +1,23 @@
 import { schemas } from "aloha-shared";
 import { PluginBase, PluginExtraType } from "./definitions/plugins-types";
 
+export function getPluginExtra<T extends schemas.ObjectWithExtras>(
+  p: PluginBase,
+  item: T
+): PluginExtraType | undefined {
+  return (item.extras || {})[p.id] as PluginExtraType;
+}
+
 export function getPluginExtraWithDefault<T extends schemas.ObjectWithExtras>(
   p: PluginBase,
   item: T,
-  defaultValue: PluginExtraType = {}
+  defaultValue: PluginExtraType
 ) {
   if (!item.extras) {
     item.extras = {};
   }
   const extra = item.extras[p.id] as PluginExtraType;
-  if (!extra) {
+  if (!extra || Object.keys(extra).length === 0) {
     item.extras[p.id] = defaultValue;
     return defaultValue;
   }

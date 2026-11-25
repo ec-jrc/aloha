@@ -62,11 +62,29 @@ import {
   editConnection,
   isConnectionRegisteredWithIdentityPropagationService,
 } from "../../services/clients";
+import AllowedHttpHeadersField from "../../components/allowed-http-headers-field";
+import { getAllowedHttpHeadersOverrides } from "../../services/hub";
+import {
+  headerRowsToObject,
+  headersObjectToRows,
+} from "../../utils/http-headers-utils";
 
 const MCPConnectionOptionsWithTagStringSchema =
-  endpoints_schemas.MCPConnectionOptionsCreateSchema.omit({ tags: true }).and(
+  endpoints_schemas.MCPConnectionOptionsCreateSchema.omit({
+    tags: true,
+    allowedHttpHeaders: true,
+  }).and(
     z.object({
       tags: z.string(),
+      allowedHttpHeaders: z
+        .array(
+          z.object({
+            key: z.string(),
+            value: z.string(),
+            override: z.boolean(),
+          })
+        )
+        .optional(),
     })
   );
 type MCPConnectionOptionsWithTagString = z.infer<
@@ -96,6 +114,7 @@ function prepareEditConnectionData(values: MCPConnectionOptionsWithTagString) {
       .split(",")
       .map((e) => e.trim())
       .filter((e) => e !== ""),
+    allowedHttpHeaders: headerRowsToObject(values.allowedHttpHeaders),
     authentication: values.authentication
       ? { ...values.authentication }
       : { type: "none" },
@@ -166,6 +185,14 @@ export default function MCPClientEditDialog({
     [client, editFormOpen],
     null
   );
+  const oidcFieldsDisabled = registration?.registered !== false;
+
+  const [, allowedHttpHeadersOverrides] = useService(
+    async () => await getAllowedHttpHeadersOverrides(),
+    [editFormOpen],
+    []
+  );
+
   const form = useForm({
     resolver: zodResolver(MCPConnectionOptionsWithTagStringSchema),
     values: {
@@ -175,6 +202,10 @@ export default function MCPClientEditDialog({
       serverProtocol: client?.serverProtocol || "http",
       authentication: client?.authentication || { type: "none" },
       tags: client?.tags?.join(", ") || "",
+      allowedHttpHeaders: headersObjectToRows(
+        client?.allowedHttpHeaders,
+        allowedHttpHeadersOverrides
+      ),
       type: "client",
     },
   });
@@ -285,7 +316,15 @@ export default function MCPClientEditDialog({
     }
   }
 
-  const authentication = useWatch({ control: form.control, name: "authentication" });
+  const authentication = useWatch({
+    control: form.control,
+    name: "authentication",
+  });
+
+  const serverProtocol = useWatch({
+    control: form.control,
+    name: "serverProtocol",
+  });
 
   return (
     <>
@@ -354,7 +393,9 @@ export default function MCPClientEditDialog({
                             <SelectItem value="http">
                               Streamable HTTP
                             </SelectItem>
+                            {/* [SSE-SUPPORT-REMOVED] restore the legacy SSE protocol option
                             <SelectItem value="sse">SSE (legacy)</SelectItem>
+                            */}
                           </SelectContent>
                         </Select>
                         <FormDescription>
@@ -416,6 +457,15 @@ export default function MCPClientEditDialog({
                     </FormItem>
                   )}
                 />
+
+                {serverProtocol === "http" && (
+                  <AllowedHttpHeadersField
+                    control={form.control}
+                    name="allowedHttpHeaders"
+                    overridesWhitelist={allowedHttpHeadersOverrides}
+                    description="Custom HTTP headers sent with every request to the MCP server over the Streamable HTTP transport."
+                  />
+                )}
 
                 <FormField
                   control={form.control}
@@ -541,7 +591,7 @@ export default function MCPClientEditDialog({
                                   disabled={registration?.registered === true}
                                 />
                                 <Button
-                                  disabled={registration?.registered === true}
+                                  disabled={oidcFieldsDisabled}
                                   type="button"
                                   onClick={() =>
                                     field.onChange(generateRandomString())
@@ -572,10 +622,10 @@ export default function MCPClientEditDialog({
                                 <Input
                                   {...field}
                                   className="mr-2"
-                                  disabled={registration?.registered === true}
+                                  disabled={oidcFieldsDisabled}
                                 />
                                 <Button
-                                  disabled={registration?.registered === true}
+                                  disabled={oidcFieldsDisabled}
                                   type="button"
                                   onClick={() =>
                                     field.onChange(generateRandomString())
@@ -597,6 +647,7 @@ export default function MCPClientEditDialog({
                       />
                     </div>
                   )}
+
               </ScrollArea>
 
               <div className="flex justify-end gap-4 mt-4">

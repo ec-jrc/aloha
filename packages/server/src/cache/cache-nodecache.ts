@@ -48,6 +48,15 @@ export class Cache<T> implements ApplicationCache<T> {
     }
     return value;
   }
+  /**
+   * Synchronous read of a cached value without a value provider. Returns
+   * undefined when the key is absent or expired. The node-cache backing is
+   * synchronous, so this is safe for callers that cannot await (e.g. code
+   * that must take-and-delete an entry within a synchronous critical path).
+   */
+  getSyncValue(key: string): T | undefined {
+    return this._cache.get<T>(key);
+  }
   del(key: string): boolean {
     return this._cache.del(key) > 0;
   }

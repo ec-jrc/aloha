@@ -92,13 +92,14 @@ export default function VisibilityEditDialog({
   const form = useForm({
     resolver: zodResolver(schemas.VisibilitySchema),
     defaultValues: visibilityObject,
+    values: visibilityObject,
   });
 
   useEffect(() => {
     if (dialogOpen) {
       form.reset();
     }
-  }, [form, dialogOpen]);
+  }, [form, dialogOpen, visibilityObject]);
 
   async function onSubmit(values: schemas.VisibilityInterface) {
     try {

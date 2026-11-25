@@ -278,7 +278,9 @@ class MCPManager {
         log.debug({ basePathToServe }, "Serving A2A requests");
       } else {
         server = new MCPServer(serverOptions, "STANDARD");
-        basePathToServe = `/api/mcp/${serverOptions.serverPath}/messages`;
+        // [SSE-SUPPORT-REMOVED] Was `/api/mcp/${...}/messages` for the legacy SSE transport;
+        // the path is now only a session key for the Streamable HTTP transport.
+        basePathToServe = `/api/mcp/${serverOptions.serverPath}/mcp`;
         log.debug({ basePathToServe }, "Serving messages");
 
         log.debug("Serving hub");
@@ -360,7 +362,8 @@ class MCPManager {
     log
       .child({ serverPath: globalHub.options.serverPath })
       .debug("Creating global hub server");
-    globalHub.serve("/api/mcp/hub/messages");
+    // [SSE-SUPPORT-REMOVED] Was "/api/mcp/hub/messages" for the legacy SSE transport.
+    globalHub.serve("/api/mcp/hub/mcp");
     this.servers.set(globalHub.id, globalHub);
     this.serversByPath.set(globalHub.options.serverPath, globalHub);
   }

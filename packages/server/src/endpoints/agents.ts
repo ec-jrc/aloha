@@ -15,7 +15,8 @@ governing permissions and limitations under the Licence.
 
 // const fetchCache = () => injector.resolve("fetchCache");
 
-import { MessageSendParams, TaskStatusUpdateEvent } from "@a2a-js/sdk";
+import { SendMessageRequest, TaskState } from "@a2a-js/sdk";
+import { AgentEvent } from "@a2a-js/sdk/server";
 import {
   authentication_strategy,
   endpoints_schemas,
@@ -24,16 +25,16 @@ import {
 } from "aloha-shared";
 import { Request, Response } from "express";
 import { z } from "zod";
-import { injector } from "../injector/injector";
-import { getLogger } from "../injector/provide-logger";
 import { A2AClient } from "../connections/a2a-client";
 import MCPClient from "../connections/mcp-client";
+import { injector } from "../injector/injector";
+import { getLogger } from "../injector/provide-logger";
 import { authorise } from "../middleware/authorise";
 import {
   AGENT_PROJECT,
   createJwtToken,
 } from "../middleware/jwt-authentication";
-import { buildTokenSetProviderFromRequest } from "../middleware/oidc/oidc-support";
+import { buildTokenSetProviderFromSession } from "../middleware/oidc/oidc-support";
 import { findCachedUsersById } from "../utils/cache.utils";
 import { stringComparer } from "../utils/sort-comparators";
 import { assertFieldInObject } from "../utils/type-utils";
@@ -44,7 +45,6 @@ import {
   validateRequestBody,
   verifyPermission,
 } from "./utils";
-import { RepositoryRead } from "../database/repositories/interfaces/repository-interfaces";
 
 const logger = getLogger("AGENT");
 
@@ -215,11 +215,12 @@ export function agentRoutes() {
         }
 
         // If the server does not have a creator, set it now
-        let creator = newAgentOptions.creator;
+        let creator = agentOption.creator;
+
         const user = authentication_strategy.getUserFromSession(req);
         if (
           !creator &&
-          user?.permissions.includes(
+          user.permissions.includes(
             authentication_strategy.Permissions.Administration
           )
         ) {
@@ -233,6 +234,7 @@ export function agentRoutes() {
         const performed = await agentRepository().updateById(id, {
           ...newAgentOptions,
           creator,
+          type: "agent",
         });
         if (!performed) return false;
         const agentOptions = await agentRepository().findById(id);
@@ -592,6 +594,17 @@ export function agentRoutes() {
 
       const identityPropagationService = await idps;
 
+      const registrar = injector().resolve("oidcIdentityPropagationRegistrar");
+
+      if (!registrar) {
+        res
+          .json({
+            registered: undefined,
+          })
+          .end();
+        return;
+      }
+
       const agent = await agentRepository().findById(id);
 
       if (!agent) {
@@ -691,8 +704,8 @@ export function agentRoutes() {
     async (req, res) => {
       assertFieldInObject(req.params, "agentId", z.string());
       const { agentId } = req.params;
-      const message = req.body as MessageSendParams;
-      const log = logger().child({ agentId, message });
+      const request = req.body as SendMessageRequest;
+      const log = logger().child({ agentId, request });
       log.debug("Send message to agent (streaming)");
 
       const agent = await agentRepository().findById(agentId);
@@ -707,7 +720,7 @@ export function agentRoutes() {
         return;
       }
 
-      const tokenSetProvider = buildTokenSetProviderFromRequest(req);
+      const tokenSetProvider = buildTokenSetProviderFromSession(req);
       let contextId: string | undefined;
       let taskId: string | undefined;
       try {
@@ -716,37 +729,32 @@ export function agentRoutes() {
         res.setHeader("Connection", "keep-alive");
         res.flushHeaders();
 
-        await connection.sendMessage(message, tokenSetProvider, (event) => {
+        await connection.sendMessage(request, tokenSetProvider, (event) => {
           log.child({ event }).debug("Event");
           res.write(`data: ${JSON.stringify(event)}\n\n`);
           if (!contextId) {
-            contextId = event.contextId;
+            contextId = event.data.contextId;
           }
           if (!taskId) {
-            if (event.kind === "task") {
-              taskId = event.id;
-            }
-            if (event.kind === "status-update") {
-              taskId = event.taskId;
-            }
+            taskId = event.kind === "task" ? event.data.id : event.data.taskId;
           }
           return Promise.resolve();
         });
       } catch (error) {
         log.error(error);
-        const msg: TaskStatusUpdateEvent = {
-          final: true,
+        const msg = AgentEvent.statusUpdate({
           taskId: taskId || "",
           contextId: contextId || "",
-          kind: "status-update",
           status: {
-            state: "failed",
+            state: TaskState.TASK_STATE_FAILED,
+            message: undefined,
+            timestamp: undefined,
           },
           metadata: {
             error: "Failed to send message to agent, check the server logs",
             detail: error instanceof Error ? error.message : String(error),
           },
-        };
+        });
         res.write(`data: ${JSON.stringify(msg)}\n\n`);
       } finally {
         res.end();

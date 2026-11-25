@@ -41,13 +41,9 @@ import {
   resolveRef,
 } from "@/utils/schemaUtils";
 import { exceptionToMessage } from "@/utils/type-utils";
+import { CompatibilityCallToolResult, Tool } from "@modelcontextprotocol/client";
+import { CallToolResultSchema, CompatibilityCallToolResultSchema } from "@modelcontextprotocol/core";
 import { ClockIcon, PlayIcon } from "@heroicons/react/16/solid";
-import {
-  CallToolResultSchema,
-  CompatibilityCallToolResult,
-  CompatibilityCallToolResultSchema,
-  Tool,
-} from "@modelcontextprotocol/sdk/types.js";
 import React from "react";
 
 type Props = {
