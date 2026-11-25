@@ -16,7 +16,11 @@ governing permissions and limitations under the Licence.
 
 import { expect } from "chai";
 import { Request, Response } from "express";
-import { authorise, setAuthPlugins, getAuthPlugins } from "../../src/middleware/authorise";
+import {
+  authorise,
+  setAuthPlugins,
+  getAuthPlugins,
+} from "../../src/middleware/authorise";
 import { authentication_strategy } from "aloha-shared";
 
 describe("authorise", () => {
@@ -38,11 +42,11 @@ describe("authorise", () => {
     mockRes = {
       status: function (this: unknown, code: number) {
         statusCode = code;
-        return this;
+        return mockRes;
       } as any,
       json: function (this: unknown, data: any) {
         jsonResponse = data;
-        return this;
+        return mockRes;
       } as any,
     };
   });
@@ -73,7 +77,13 @@ describe("authorise", () => {
 
   it("should pass through when no permissions to check", (done) => {
     mockReq.session = {
-      user: { id: "1", userId: "test", displayName: "Test", permissions: [], provider: "test" },
+      user: {
+        id: "1",
+        userId: "test",
+        displayName: "Test",
+        permissions: [],
+        provider: "test",
+      },
     } as any;
 
     const middleware = authorise([]);
@@ -85,10 +95,10 @@ describe("authorise", () => {
   it("should manage auth plugins", () => {
     const mockPlugin: authentication_strategy.AuthenticationStrategy = {
       init: async () => {},
-      getAuthenticationMiddleware: async () => ((_req, _res, next) => next()),
+      getAuthenticationMiddleware: async () => (_req, _res, next) => next(),
       checkPermissions: async () => true,
-      login: async () => ((_req, res) => res.send()),
-      logout: async () => ((_req, _res, next) => next()),
+      login: async () => (_req, res) => res.send(),
+      logout: async () => (_req, _res, next) => next(),
       getInfo: async () => ({ provider: "test" }),
     };
 

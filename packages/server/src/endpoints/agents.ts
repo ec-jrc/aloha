@@ -51,6 +51,7 @@ const logger = getLogger("AGENT");
 const agentRepository = () => injector().resolve("agentRepository");
 const mcpManager = () => injector().resolve("mcpManager");
 const fetchCache = () => injector().resolve("fetchCache");
+const metricsProvider = () => injector().resolve("metricsProvider");
 
 export function agentRoutes() {
   logger().debug("Registering agents router");
@@ -681,21 +682,29 @@ export function agentRoutes() {
 
       const agent = await agentRepository().findById(agentId);
       if (!agent) {
+        metricsProvider().debugA2aRequest(agentId, "task_cancel", false);
         res.status(404).json({ error: "Agent not found" });
         return;
       }
 
       const connection = mcpManager().getConnection(agentId, A2AClient);
       if (!connection) {
+        metricsProvider().debugA2aRequest(agentId, "task_cancel", false);
         res.status(404).json({ error: "A2A Connection not found" });
         return;
       }
 
-      await connection.cancelTask(message.taskId, {
-        publish(event) {
-          res.json(event).end();
-        },
-      });
+      try {
+        await connection.cancelTask(message.taskId, {
+          publish(event) {
+            res.json(event).end();
+          },
+        });
+        metricsProvider().debugA2aRequest(agentId, "task_cancel", true);
+      } catch (error) {
+        metricsProvider().debugA2aRequest(agentId, "task_cancel", false);
+        throw error;
+      }
     }
   );
   router.post(
@@ -710,12 +719,14 @@ export function agentRoutes() {
 
       const agent = await agentRepository().findById(agentId);
       if (!agent) {
+        metricsProvider().debugA2aRequest(agentId, "message_send", false);
         res.status(404).json({ error: "Agent not found" });
         return;
       }
 
       const connection = mcpManager().getConnection(agentId, A2AClient);
       if (!connection) {
+        metricsProvider().debugA2aRequest(agentId, "message_send", false);
         res.status(404).json({ error: "A2A Connection not found" });
         return;
       }
@@ -723,6 +734,7 @@ export function agentRoutes() {
       const tokenSetProvider = buildTokenSetProviderFromSession(req);
       let contextId: string | undefined;
       let taskId: string | undefined;
+      let success = true;
       try {
         res.setHeader("Content-Type", "text/event-stream");
         res.setHeader("Cache-Control", "no-cache");
@@ -741,6 +753,7 @@ export function agentRoutes() {
           return Promise.resolve();
         });
       } catch (error) {
+        success = false;
         log.error(error);
         const msg = AgentEvent.statusUpdate({
           taskId: taskId || "",
@@ -757,6 +770,7 @@ export function agentRoutes() {
         });
         res.write(`data: ${JSON.stringify(msg)}\n\n`);
       } finally {
+        metricsProvider().debugA2aRequest(agentId, "message_send", success);
         res.end();
       }
     }

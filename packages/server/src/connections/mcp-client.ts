@@ -27,6 +27,7 @@ the Licence is distributed on an “AS IS” basis, WITHOUT WARRANTIES OR CONDIT
 OF ANY KIND, either express or implied. See the Licence for the specific language
 governing permissions and limitations under the Licence.
 */
+import { isEqual } from "@ver0/deep-equal";
 import { schemas } from "aloha-shared";
 import z from "zod";
 import { injector } from "../injector/injector";
@@ -57,6 +58,12 @@ export default class MCPClient implements RemoteClient {
   public resourceTemplates: ResourceTemplateType[] = [];
   public prompts: Prompt[] = [];
   public tools: Tool[] = [];
+
+  /** Revision of the remote lists this client instance last synced at.
+   *  The manager's shared (main) client carries the current/latest revision for a
+   *  connection; per-session dedicated clients compare their own value against it
+   *  to decide whether they need to refresh. */
+  public revisionVersion: number = 0;
 
   private _lastListRefresh: number = 0;
 
@@ -183,17 +190,26 @@ export default class MCPClient implements RemoteClient {
           await this.client.transport.terminateSession();
         }
       } catch (error) {
-        log.debug(error, "terminateSession failed during close; continuing teardown");
+        log.debug(
+          error,
+          "terminateSession failed during close; continuing teardown"
+        );
       }
       try {
         await this.client.transport?.close();
       } catch (error) {
-        log.debug(error, "transport.close failed during close; continuing teardown");
+        log.debug(
+          error,
+          "transport.close failed during close; continuing teardown"
+        );
       }
       try {
         await this.client.close();
       } catch (error) {
-        log.debug(error, "client.close failed during close; continuing teardown");
+        log.debug(
+          error,
+          "client.close failed during close; continuing teardown"
+        );
       }
     }
     this.connectPromise = null;
@@ -219,6 +235,15 @@ export default class MCPClient implements RemoteClient {
     const log = logger().child({ clientId: this.connectionOptions.id });
 
     const capabilities = this.client.getServerCapabilities();
+
+    // Snapshot the previous lists so we can detect remote changes even when the
+    // server does not send list_changed notifications (e.g. after a restart).
+    const prev = {
+      resources: this.resources,
+      resourceTemplates: this.resourceTemplates,
+      prompts: this.prompts,
+      tools: this.tools,
+    };
 
     const requests: Promise<void>[] = [];
 
@@ -282,6 +307,15 @@ export default class MCPClient implements RemoteClient {
     }
 
     await Promise.all(requests);
+
+    if (
+      !isEqual(this.resources, prev.resources) ||
+      !isEqual(this.resourceTemplates, prev.resourceTemplates) ||
+      !isEqual(this.prompts, prev.prompts) ||
+      !isEqual(this.tools, prev.tools)
+    ) {
+      this.revisionVersion++;
+    }
   }
 
   private constructClient() {
@@ -295,17 +329,26 @@ export default class MCPClient implements RemoteClient {
         listChanged: {
           tools: {
             onChanged: (err, tools) => {
-              if (!err && tools) this.tools = tools;
+              if (!err && tools) {
+                this.tools = tools;
+                this.revisionVersion++;
+              }
             },
           },
           prompts: {
             onChanged: (err, prompts) => {
-              if (!err && prompts) this.prompts = prompts;
+              if (!err && prompts) {
+                this.prompts = prompts;
+                this.revisionVersion++;
+              }
             },
           },
           resources: {
             onChanged: (err, resources) => {
-              if (!err && resources) this.resources = resources;
+              if (!err && resources) {
+                this.resources = resources;
+                this.revisionVersion++;
+              }
             },
           },
         },

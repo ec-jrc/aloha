@@ -1,6 +1,17 @@
 import { OAuthTokensSchema } from "@modelcontextprotocol/core";
-import { AuthInfo, OAuthClientInformation, OAuthClientMetadata, OAuthError, OAuthErrorCode, OAuthTokens, OAuthTokenVerifier } from "@modelcontextprotocol/server";
-import { getOAuthProtectedResourceMetadataUrl, requireBearerAuth } from "@modelcontextprotocol/express";
+import {
+  AuthInfo,
+  OAuthClientInformation,
+  OAuthClientMetadata,
+  OAuthError,
+  OAuthErrorCode,
+  OAuthTokens,
+  OAuthTokenVerifier,
+} from "@modelcontextprotocol/server";
+import {
+  getOAuthProtectedResourceMetadataUrl,
+  requireBearerAuth,
+} from "@modelcontextprotocol/express";
 import { OAuthClientProvider } from "@modelcontextprotocol/client";
 
 /*
@@ -244,7 +255,10 @@ export function createOptionalMCPOidcAuthMiddleware(
             getUserDetail
           );
         } catch (error) {
-          throw new OAuthError(OAuthErrorCode.InvalidToken, unknownToString(error));
+          throw new OAuthError(
+            OAuthErrorCode.InvalidToken,
+            unknownToString(error)
+          );
         }
       },
     };

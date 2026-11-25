@@ -15,7 +15,10 @@ governing permissions and limitations under the Licence.
 // [Note: File generated using Generative AI technology]
 
 import { expect } from "chai";
-import { AGENT_PROJECT, AlohaJWTPayload } from "../../src/middleware/jwt-authentication";
+import {
+  AGENT_PROJECT,
+  AlohaJWTPayload,
+} from "../../src/middleware/jwt-authentication";
 
 describe("jwt-authentication", () => {
   it("should export AGENT_PROJECT constant", () => {

@@ -112,7 +112,7 @@ export async function startMcpEverythingServerProcess() {
   });
 }
 
-async function startServerProcess() {
+export async function startServerProcess() {
   const port = await getPort();
   const mongodbPort = await getPort();
 
@@ -126,7 +126,7 @@ async function startServerProcess() {
   const mockDatabase = mockClient.db();
 
   const server = execa("npm", ["run", "e2e"], {
-    cwd: path.join(process.env.INIT_CWD!, "..", "server"),
+    cwd: path.join(process.env.INIT_CWD || "", "..", "server"),
     env: {
       NODE_ENV: "e2e",
       SERVER_PORT: port.toString(),

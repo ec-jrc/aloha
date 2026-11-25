@@ -53,6 +53,8 @@ const agentRepository = () => injector().resolve("agentRepository");
 const serverOptionsRepository = () =>
   injector().resolve("serverOptionsRepository");
 
+const metricsProvider = () => injector().resolve("metricsProvider");
+
 const logger = getLogger("CLIENTS");
 
 export function clientsRoutes() {
@@ -717,6 +719,8 @@ export function clientsRoutes() {
             mcpManager().cacheAutoCloseClient(userSessionClientId, newClient);
           }
 
+          metricsProvider().debugMcpRequest(id, clientRequest.method, true);
+
           res
             .json({
               response,
@@ -732,6 +736,7 @@ export function clientsRoutes() {
           }
         }
       } catch (error) {
+        metricsProvider().debugMcpRequest(id, clientRequest.method, false);
         log.error(error);
         res
           .status(500)

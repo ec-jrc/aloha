@@ -286,9 +286,9 @@ aloha/
 │   ├── aloha-shared/  # Shared types and utilities
 │   └── e2e-tests/     # End-to-end integration tests
 ├── plugins/           # Extensible plugin modules
-│   └── ecas/         # ECAS authentication plugin
+│   └── (authentication plugins are provided at runtime)
 ├── docs/             # Documentation and assets
-├── .vscode/          # VS Code configuration
+
 ├── pnpm-workspace.yaml
 ├── lerna.json
 └── package.json      # Root workspace configuration

@@ -19,6 +19,7 @@ import { provideDatabase } from "./provide-database";
 import { provideEnvVars } from "./provide-env-vars";
 import { provideLogger } from "./provide-logger-instance";
 import { provideMcpManager } from "./provide-mcp-manager";
+import { provideMetrics } from "./provide-metrics";
 import { provideOIDC } from "./provide-oidc";
 import { provideSessionStore } from "./provide-session-store";
 
@@ -34,10 +35,12 @@ const unusedRefsRequiredBuTheCompiler = [
 
 let defaultInjector = providePlatformPlugins(
   provideMcpManager(
-    provideSessionStore(
-      provideDatabase(
-        provideLogger(
-          provideOIDC(provideEnvVars(provideCaches(createInjector())))
+    provideMetrics(
+      provideSessionStore(
+        provideDatabase(
+          provideLogger(
+            provideOIDC(provideEnvVars(provideCaches(createInjector())))
+          )
         )
       )
     )

@@ -55,6 +55,8 @@ export function provideEnvVars<T>(injector: Injector<T>) {
     .split(",")
     .map((h) => h.trim().toLowerCase())
     .filter(Boolean);
+  const METRICS_ENABLED = (process.env.METRICS_ENABLED || "true") === "true";
+  const METRICS_PREFIX = process.env.METRICS_PREFIX || "aloha_";
 
   const newInjector = injector
     .provideValue("isProduction", isProduction)
@@ -62,10 +64,7 @@ export function provideEnvVars<T>(injector: Injector<T>) {
       "defaultJWTAuthentication",
       DEFAULT_JWT_AUTHENTICATION === "true"
     )
-    .provideValue(
-      "allowedHttpHeadersOverrides",
-      ALLOWED_HTTP_HEADERS_OVERRIDES
-    )
+    .provideValue("allowedHttpHeadersOverrides", ALLOWED_HTTP_HEADERS_OVERRIDES)
     .provideValue("pluginPath", process.env.AUTHENTICATION_PLUGIN)
     .provideValue(
       "platformPluginsNames",
@@ -78,7 +77,9 @@ export function provideEnvVars<T>(injector: Injector<T>) {
     .provideValue("serverSecret", SERVER_SECRET)
     .provideValue("clientSecret", CLIENT_SECRET)
     .provideValue("sessionSecret", SESSION_SECRET)
-    .provideValue("sessionMaxAge", SESSION_MAX_AGE);
+    .provideValue("sessionMaxAge", SESSION_MAX_AGE)
+    .provideValue("metricsEnabled", METRICS_ENABLED)
+    .provideValue("metricsPrefix", METRICS_PREFIX);
 
   return newInjector;
 }

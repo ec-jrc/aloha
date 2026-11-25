@@ -19,6 +19,7 @@ import { AgentRepository } from "../database/repositories/interfaces/agent-repos
 import { ConnectionOptionsRepository } from "../database/repositories/interfaces/connection-options-repository";
 import { injector } from "../injector/injector";
 import { getLogger } from "../injector/provide-logger";
+import type { MetricsProvider } from "../metrics/metrics-provider";
 import { TokenSetProvider } from "../middleware/oidc/oidc-support";
 import { isA2AAgent } from "../utils/a2a-utils";
 import { A2AClient } from "./a2a-client";
@@ -33,7 +34,9 @@ class MCPManager {
   public static inject = [
     "connectionOptionsRepository",
     "agentRepository",
+    "metricsProvider",
   ] as const;
+
   private connections: Map<string, MCPClient | A2AClient> = new Map();
   private servers: Map<string, MCPServer | A2AServer> = new Map();
   private serversByPath: Map<string, MCPServer | A2AServer> = new Map();
@@ -46,7 +49,8 @@ class MCPManager {
 
   public constructor(
     private connectionOptionsRepository: ConnectionOptionsRepository,
-    private agentRepository: AgentRepository
+    private agentRepository: AgentRepository,
+    private metrics: MetricsProvider
   ) {
     setInterval(() => {
       void this.closeAutoCloseClients();
@@ -83,6 +87,10 @@ class MCPManager {
   getConnections() {
     return this.connections.values();
   }
+  getConnectionRevision(id: string): number {
+    const connection = this.connections.get(id);
+    return connection instanceof MCPClient ? connection.revisionVersion : 0;
+  }
 
   createConnection(
     serverOptions: schemas.MCPBaseConnectionWithId | schemas.AgentWithId,
@@ -113,6 +121,14 @@ class MCPManager {
     log.debug("Removing connection");
     const connection = this.connections.get(id);
     if (connection) {
+      // Drop the connection's liveness series so it disappears from the
+      // exposition (Prometheus marks it stale) rather than freezing at its
+      // last value. Historical samples remain queryable in Prometheus.
+      this.metrics.clearConnectionState(
+        connection.id,
+        connection.connectionOptions.name,
+        connection instanceof A2AClient ? "a2a" : "mcp"
+      );
       await connection.close();
     }
 
@@ -158,11 +174,21 @@ class MCPManager {
 
       await Promise.all(
         Array.from(this.connections.values()).map(async (connection) => {
+          // Disabled outbound connections are intentionally off and never
+          // actually ping (both clients short-circuit) — don't time them.
+          if (connection.connectionOptions.disabled) return;
+          const type = connection instanceof A2AClient ? "a2a" : "mcp";
+          const start = performance.now();
           try {
             await connection.pingClient();
-            // eslint-disable-next-line @typescript-eslint/no-unused-vars
           } catch (e) {
-            // logger().error(e);
+            logger().debug(e);
+          } finally {
+            this.metrics.pingComplete(
+              connection.id,
+              type,
+              (performance.now() - start) / 1000
+            );
           }
         })
       );
@@ -170,8 +196,23 @@ class MCPManager {
       // Detect state transitions and persist timestamps
       for (const connection of this.connections.values()) {
         const id = connection.id;
+        const type = connection instanceof A2AClient ? "a2a" : "mcp";
+        const name = connection.connectionOptions.name;
+
+        // A disabled outbound connection is neither up nor down — drop its
+        // liveness series so it is not counted as downtime, and keep the
+        // previous-state cache in sync so re-enabling emits a clean transition.
+        if (connection.connectionOptions.disabled) {
+          this.metrics.clearConnectionState(id, name, type);
+          this.previousConnectedState.set(id, false);
+          continue;
+        }
+
         const wasConnected = this.previousConnectedState.get(id);
         const isNowConnected = connection.isConnected;
+
+        // Refresh the current-state gauge every cycle.
+        this.metrics.connectionState(id, name, type, isNowConnected);
 
         if (wasConnected !== isNowConnected) {
           const repo =
@@ -188,9 +229,28 @@ class MCPManager {
               .child({ connectionId: id })
               .error(e, "Failed to persist uptime timestamp");
           }
+          // Count only actual state changes, not every ping cycle.
+          this.metrics.connectionTransition(
+            id,
+            name,
+            type,
+            isNowConnected ? "connected" : "disconnected"
+          );
           this.previousConnectedState.set(id, isNowConnected);
         }
       }
+
+      // Server reachability gauge: a registered server is serving/online.
+      for (const [serverId, server] of this.servers.entries()) {
+        this.metrics.serverState(
+          serverId,
+          server.options.serverPath,
+          !server.options.disabled
+        );
+      }
+
+      // Hub-level summary counts by kind (client / agent / server).
+      this.recordHubSummary();
 
       const connectedServers = Array.from(this.connections.values()).reduce(
         (p, c) => p + (c.isConnected ? 1 : 0),
@@ -303,6 +363,9 @@ class MCPManager {
     if (server) {
       const log = logger().child({ serverId: id });
       log.debug("Removing server");
+      // Drop the server's reachability series so it disappears from the
+      // exposition rather than freezing at its last value.
+      this.metrics.clearServerState(id, server.options.serverPath);
       this.serversByPath.delete(server.options.serverPath);
       await server.close();
     }
@@ -393,6 +456,37 @@ class MCPManager {
           [k: string]: MCPClient;
         }
       )
+    );
+  }
+
+  private recordHubSummary() {
+    const connections = Array.from(this.connections.values()).filter(
+      (c) => !c.connectionOptions.disabled
+    );
+    const clients = connections.filter(
+      (c) => c.connectionOptions.type === "client"
+    );
+    const agents = connections.filter(
+      (c) => c.connectionOptions.type === "agent"
+    );
+    const servers = Array.from(this.servers.values()).filter(
+      (s) => s.options.type === "server"
+    );
+
+    this.metrics.hubSummary(
+      "client",
+      clients.filter((c) => c.isConnected).length,
+      clients.length
+    );
+    this.metrics.hubSummary(
+      "agent",
+      agents.filter((c) => c.isConnected).length,
+      agents.length
+    );
+    this.metrics.hubSummary(
+      "server",
+      servers.filter((s) => !s.options.disabled).length,
+      servers.length
     );
   }
 

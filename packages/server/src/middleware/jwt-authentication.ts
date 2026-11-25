@@ -39,9 +39,16 @@ const IN_MEMORY_ENTITY_TTL = TOKEN_CACHE_TIMEOUT + CACHE_CHECK_PERIOD + 5;
 
 export const AGENT_PROJECT = "AGENT";
 
+let onAuthFailure: authentication_strategy.AuthenticationStrategyOptions["onAuthFailure"];
+
 const jwtAuthenticationStrategy: authentication_strategy.AuthenticationStrategy =
   {
-    async init() {},
+    // eslint-disable-next-line @typescript-eslint/require-await
+    async init(
+      options?: Partial<authentication_strategy.AuthenticationStrategyOptions>
+    ) {
+      onAuthFailure = options?.onAuthFailure;
+    },
 
     // eslint-disable-next-line @typescript-eslint/require-await
     async getAuthenticationMiddleware(): Promise<
@@ -139,6 +146,7 @@ const jwtAuthenticationStrategy: authentication_strategy.AuthenticationStrategy 
                   return finalUser;
                 } catch (error) {
                   logger().child({ error }).error("JWT verification error");
+                  onAuthFailure?.(PROVIDER_NAME, "invalid");
                   return null;
                 }
               },

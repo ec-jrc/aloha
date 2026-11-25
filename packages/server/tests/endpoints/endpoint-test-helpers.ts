@@ -82,6 +82,34 @@ export function createMockMcpManager() {
   };
 }
 
+export function createMockMetricsProvider() {
+  return {
+    init: sinon.stub(),
+    getRouter: sinon.stub().returns(express.Router()),
+    shutdown: sinon.stub().resolves(),
+    connectionState: sinon.stub(),
+    clearConnectionState: sinon.stub(),
+    connectionTransition: sinon.stub(),
+    serverState: sinon.stub(),
+    clearServerState: sinon.stub(),
+    pingComplete: sinon.stub(),
+    hubSummary: sinon.stub(),
+    mcpRequestComplete: sinon.stub(),
+    mcpToolCallComplete: sinon.stub(),
+    mcpSessionDelta: sinon.stub(),
+    a2aRequestComplete: sinon.stub(),
+    a2aTaskStatus: sinon.stub(),
+    a2aTasksActive: sinon.stub(),
+    debugMcpRequest: sinon.stub(),
+    debugA2aRequest: sinon.stub(),
+    testbedExecution: sinon.stub(),
+    authFailure: sinon.stub(),
+    proxyUpstreamError: sinon.stub(),
+    proxyResponseSize: sinon.stub(),
+    connectionRequestReceived: sinon.stub(),
+  };
+}
+
 // ── Default admin user ──────────────────────────────────────────────────────
 
 export const adminUser: authentication_strategy.UserPrincipal = {
@@ -175,6 +203,7 @@ export interface MockDependencies {
   serverOptionsRepository: ReturnType<typeof createMockVisibilityRepository>;
   agentRepository: ReturnType<typeof createMockVisibilityRepository>;
   mcpManager: ReturnType<typeof createMockMcpManager>;
+  metricsProvider: ReturnType<typeof createMockMetricsProvider>;
   rootLogger: ReturnType<typeof createMockLogger>;
 }
 
@@ -192,6 +221,7 @@ export function createMockDependencies(): MockDependencies {
     serverOptionsRepository: createMockVisibilityRepository(),
     agentRepository: createMockVisibilityRepository(),
     mcpManager: createMockMcpManager(),
+    metricsProvider: createMockMetricsProvider(),
     rootLogger: createMockLogger(),
   };
 }

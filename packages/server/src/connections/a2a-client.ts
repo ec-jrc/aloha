@@ -37,10 +37,14 @@ import {
   RequestContext,
 } from "@a2a-js/sdk/server";
 import { schemas } from "aloha-shared";
+import { injector } from "../injector/injector";
 import { getLogger } from "../injector/provide-logger";
+import type { MetricsProvider } from "../metrics/metrics-provider";
+import { getCurrentUserId } from "../metrics/user-id";
 import { TokenSetProvider } from "../middleware/oidc/oidc-support";
 import { assertDefined, unknownToString } from "../utils/type-utils";
 import { getAdditionalAuthenticationHeaders } from "./auth-utils";
+import { classifyUpstreamError } from "./mcp-server";
 import { RemoteClient } from "./remote-client";
 
 const logger = getLogger("A2A-CLIENT");
@@ -149,6 +153,7 @@ export class A2AClient implements RemoteClient {
   private clientFactory: ClientFactory;
   private agentCard: AgentCard | undefined;
   private client: Client | undefined;
+  private metrics: MetricsProvider;
   private taskMap = new Map<
     string,
     | {
@@ -164,6 +169,8 @@ export class A2AClient implements RemoteClient {
     public tokenSetProvider: TokenSetProvider | undefined
   ) {
     this.clientFactory = this.buildClientFactory(tokenSetProvider);
+
+    this.metrics = injector().resolve("metricsProvider");
   }
 
   public get id(): string {
@@ -241,12 +248,26 @@ export class A2AClient implements RemoteClient {
       return;
     }
 
+    const start = performance.now();
+    const user = getCurrentUserId();
+    this.metrics.connectionRequestReceived(
+      this.connectionOptions.id,
+      this.connectionOptions.name
+    );
     try {
       const task = await client.cancelTask({
         tenant: "",
         id: mappedClientTask.task.id,
         metadata: undefined,
       });
+
+      this.metrics.a2aRequestComplete(
+        this.connectionOptions.serverPath,
+        "task/cancel",
+        user,
+        (performance.now() - start) / 1000,
+        true
+      );
 
       eventBus.publish(
         AgentEvent.statusUpdate({
@@ -260,7 +281,31 @@ export class A2AClient implements RemoteClient {
           metadata: undefined,
         })
       );
+      if (
+        task.status &&
+        (task.status.state === TaskState.TASK_STATE_COMPLETED ||
+          task.status.state === TaskState.TASK_STATE_CANCELED ||
+          task.status.state === TaskState.TASK_STATE_FAILED ||
+          task.status.state === TaskState.TASK_STATE_REJECTED)
+      ) {
+        this.metrics.a2aTaskStatus(
+          this.connectionOptions.serverPath,
+          task.status.state
+        );
+      }
     } catch (err) {
+      this.metrics.a2aRequestComplete(
+        this.connectionOptions.serverPath,
+        "task/cancel",
+        user,
+        (performance.now() - start) / 1000,
+        false
+      );
+      this.metrics.proxyUpstreamError(
+        this.connectionOptions.serverPath,
+        "a2a",
+        classifyUpstreamError(err)
+      );
       logger().child({ taskId: taskId }).error(err);
       eventBus.publish(failedUpdate);
     }
@@ -289,22 +334,53 @@ export class A2AClient implements RemoteClient {
       metadata: undefined,
     };
 
-    if (supportsStreaming) {
-      const stream = client.sendMessageStream(request);
-      for await (const response of stream) {
-        const event = streamResponseToAgentEvent(response);
-        if (!event) {
-          continue;
+    this.metrics.connectionRequestReceived(
+      this.connectionOptions.id,
+      this.connectionOptions.name
+    );
+    const operation = supportsStreaming ? "message/stream" : "message/send";
+    const user = getCurrentUserId();
+    const start = performance.now();
+    try {
+      if (supportsStreaming) {
+        const stream = client.sendMessageStream(request);
+        for await (const response of stream) {
+          const event = streamResponseToAgentEvent(response);
+          if (!event) {
+            continue;
+          }
+          this.updateTaskMap(event, requestContext.taskId, tokenSetProvider);
+          eventBus.publish(this.replaceTaskId(event, requestContext.taskId));
         }
+      } else {
+        const result = await client.sendMessage(request);
+        const event =
+          "id" in result ? AgentEvent.task(result) : AgentEvent.message(result);
         this.updateTaskMap(event, requestContext.taskId, tokenSetProvider);
         eventBus.publish(this.replaceTaskId(event, requestContext.taskId));
+
+        this.metrics.a2aRequestComplete(
+          this.connectionOptions.serverPath,
+          operation,
+          user,
+          (performance.now() - start) / 1000,
+          true
+        );
       }
-    } else {
-      const result = await client.sendMessage(request);
-      const event =
-        "id" in result ? AgentEvent.task(result) : AgentEvent.message(result);
-      this.updateTaskMap(event, requestContext.taskId, tokenSetProvider);
-      eventBus.publish(this.replaceTaskId(event, requestContext.taskId));
+    } catch (e) {
+      this.metrics.a2aRequestComplete(
+        this.connectionOptions.serverPath,
+        operation,
+        user,
+        (performance.now() - start) / 1000,
+        false
+      );
+      this.metrics.proxyUpstreamError(
+        this.connectionOptions.serverPath,
+        "a2a",
+        classifyUpstreamError(e)
+      );
+      throw e;
     }
 
     eventBus.finished();
@@ -321,24 +397,55 @@ export class A2AClient implements RemoteClient {
       throw new Error(`Client Card not available`);
     }
 
-    if (this.agentCard.capabilities?.streaming) {
-      logger().child({ request }).debug("Send message stream");
-      const stream = client.sendMessageStream(request);
-      for await (const response of stream) {
-        const event = streamResponseToAgentEvent(response);
-        if (!event) {
-          continue;
+    const streaming = this.agentCard.capabilities?.streaming;
+    const operation = streaming ? "message/stream" : "message/send";
+    const user = getCurrentUserId();
+    const start = performance.now();
+    this.metrics.connectionRequestReceived(
+      this.connectionOptions.id,
+      this.connectionOptions.name
+    );
+    try {
+      if (streaming) {
+        logger().child({ request }).debug("Send message stream");
+        const stream = client.sendMessageStream(request);
+        for await (const response of stream) {
+          const event = streamResponseToAgentEvent(response);
+          if (!event) {
+            continue;
+          }
+          this.updateTaskMap(event, undefined, tokenSetProvider);
+          await callback(event);
         }
+      } else {
+        logger().child({ request }).debug("Send message sync");
+        const result = await client.sendMessage(request);
+        const event =
+          "id" in result ? AgentEvent.task(result) : AgentEvent.message(result);
         this.updateTaskMap(event, undefined, tokenSetProvider);
         await callback(event);
       }
-    } else {
-      logger().child({ request }).debug("Send message sync");
-      const result = await client.sendMessage(request);
-      const event =
-        "id" in result ? AgentEvent.task(result) : AgentEvent.message(result);
-      this.updateTaskMap(event, undefined, tokenSetProvider);
-      await callback(event);
+      this.metrics.a2aRequestComplete(
+        this.connectionOptions.serverPath,
+        operation,
+        user,
+        (performance.now() - start) / 1000,
+        true
+      );
+    } catch (e) {
+      this.metrics.a2aRequestComplete(
+        this.connectionOptions.serverPath,
+        operation,
+        user,
+        (performance.now() - start) / 1000,
+        false
+      );
+      this.metrics.proxyUpstreamError(
+        this.connectionOptions.serverPath,
+        "a2a",
+        classifyUpstreamError(e)
+      );
+      throw e;
     }
   }
 
@@ -369,6 +476,7 @@ export class A2AClient implements RemoteClient {
     if (!taskId) {
       return;
     }
+    const agentPath = this.connectionOptions.serverPath;
     if (
       event.kind === "task" &&
       event.data.status?.state === TaskState.TASK_STATE_SUBMITTED
@@ -378,11 +486,15 @@ export class A2AClient implements RemoteClient {
         tokenSetProvider,
         createdAt: Date.now(),
       });
+      this.metrics.a2aTaskStatus(agentPath, TaskState.TASK_STATE_SUBMITTED);
+      this.metrics.a2aTasksActive(agentPath, this.taskMap.size);
     }
     if (event.kind === "statusUpdate" || event.kind === "task") {
       const state = event.data.status?.state;
       if (state !== undefined && TERMINAL_TASK_STATES.has(state)) {
         this.taskMap.delete(taskId);
+        this.metrics.a2aTaskStatus(agentPath, state);
+        this.metrics.a2aTasksActive(agentPath, this.taskMap.size);
       }
     }
     // Sweep stale tasks

@@ -53,6 +53,8 @@ ALOHA provides out-of-the-box functionality to test MCP servers, connect A2A age
 
 For detailed user guides and platform documentation, see the [User Manual](docs/introduction.md).
 
+For observability and monitoring, see the [Metrics Guide](docs/metrics.md).
+
 ---
 
 ## Quick Start
@@ -122,6 +124,8 @@ pnpm lerna run dev --scope client
 | `SERVER_SECRET`         | Server authentication secret     | (required)                        |
 | `CLIENT_SECRET`         | Client authentication secret     | (required)                        |
 | `AUTHENTICATION_PLUGIN` | Path to custom auth plugin       | (optional)                        |
+| `METRICS_ENABLED`       | Enable Prometheus metrics        | `true`                            |
+| `METRICS_PREFIX`        | Prefix for all metric names      | `aloha_`                          |
 
 ### Setup Instructions
 

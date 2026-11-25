@@ -24,9 +24,12 @@ services:
     ports:
       - "9090:9090"
     volumes:
-      - ./prometheus.yml:/prometheus/prometheus.yml
       - prometheus_data:/prometheus
+    configs:
+      - source: prometheus_config
+        target: /etc/prometheus/prometheus.yml
     command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
       - "--storage.tsdb.path=/prometheus"
       - "--storage.tsdb.retention.time=200h"
 
@@ -110,3 +113,16 @@ volumes:
   prometheus_data:
   keycloak_truststore:
   keycloak_data:
+
+configs:
+  prometheus_config:
+    content: |
+      # See docs/metrics.md for full documentation.
+      global:
+        scrape_interval: 15s
+        evaluation_interval: 15s
+      scrape_configs:
+        - job_name: "aloha"
+          metrics_path: "/metrics"
+          static_configs:
+            - targets: ["localhost:3000"]

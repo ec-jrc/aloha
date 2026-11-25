@@ -16,11 +16,11 @@ governing permissions and limitations under the Licence.
 import { authentication_strategy } from "aloha-shared";
 import cookie_parser from "cookie-parser";
 import express from "express";
-import promMid from "express-prometheus-middleware";
 import session from "express-session";
 import path from "path";
 import { injector } from "../injector/injector";
 import { getLogger } from "../injector/provide-logger";
+import { initTelemetry } from "../metrics/init-telemetry";
 import { getAuthPlugins, setAuthPlugins } from "../middleware/authorise";
 import jwtAuthenticationStrategy from "../middleware/jwt-authentication";
 import noAuthenticationStrategy from "../middleware/no-authentication";
@@ -50,11 +50,17 @@ async function loadAuthPlugins(): Promise<
   log.info("Loading auth plugins");
   const plugins: authentication_strategy.AuthenticationStrategy[] = [];
 
+  const onAuthFailure: authentication_strategy.AuthenticationStrategyOptions["onAuthFailure"] =
+    (provider, reason) => {
+      injector().resolve("metricsProvider").authFailure(provider, reason);
+    };
+
   if (injector().resolve("defaultJWTAuthentication")) {
     log.info("Use JWT AuthenticationStrategy");
     plugins.push(jwtAuthenticationStrategy);
     await jwtAuthenticationStrategy.init({
       loggerFactory: getLogger("JWT-Authentication"),
+      onAuthFailure,
     });
   }
 
@@ -62,7 +68,7 @@ async function loadAuthPlugins(): Promise<
   if (oidcEnabled) {
     log.info("Loading OIDC authentication");
     plugins.push(oidcAuthentication);
-    await oidcAuthentication.init();
+    await oidcAuthentication.init({ onAuthFailure });
   }
 
   const pluginPath = injector().resolve("pluginPath");
@@ -78,6 +84,7 @@ async function loadAuthPlugins(): Promise<
       plugins.push(noAuthenticationStrategy);
       await noAuthenticationStrategy.init({
         loggerFactory: getLogger("No-Authentication"),
+        onAuthFailure,
       });
     }
   } else {
@@ -92,6 +99,7 @@ async function loadAuthPlugins(): Promise<
 
         await pluginModule.default.init({
           loggerFactory: getLogger("PLUGIN"),
+          onAuthFailure,
         });
         plugins.push(pluginModule.default || pluginModule);
       }
@@ -165,6 +173,9 @@ export async function expressSetup() {
   // Load authentication plugin
   const standardPlugins = await loadAuthPlugins();
 
+  // Initialize telemetry and mount /metrics (before auth so endpoint is unauthenticated)
+  initTelemetry(app);
+
   setAuthPlugins([...getAuthPlugins(), ...standardPlugins]);
 
   app.use(cookie_parser());
@@ -178,25 +189,6 @@ export async function expressSetup() {
       await plugin.getAuthenticationMiddleware(getUserWithIdFromRepository)
     );
   }
-
-  log.info("Registering prometheus endpoint");
-  app.use(
-    promMid({
-      metricsPath: "/metrics",
-      prefix: "aloha_",
-      collectDefaultMetrics: true,
-      requestDurationBuckets: [0.1, 0.5, 1, 1.5],
-      requestLengthBuckets: [512, 1024, 5120, 10240, 51200, 102400],
-      responseLengthBuckets: [512, 1024, 5120, 10240, 51200, 102400],
-      customLabels: ["user"],
-      transformLabels: (labels, req) => {
-        if (!authentication_strategy.isUserAuthenticated(req)) {
-          return "anonymous";
-        }
-        labels.user = authentication_strategy.getUserFromSession(req).id;
-      },
-    })
-  );
 
   log.info("Registering login endpoint");
   app.use(

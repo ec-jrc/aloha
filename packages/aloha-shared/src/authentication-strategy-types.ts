@@ -60,8 +60,15 @@ export type UserPrincipalWithProjects = z.infer<
   typeof UserPrincipalWithProjectsSchema
 >;
 
+export type AuthFailureReason =
+  | "expired"
+  | "invalid"
+  | "forbidden"
+  | "not_found";
+
 export type AuthenticationStrategyOptions = {
   loggerFactory: () => Logger;
+  onAuthFailure?: (provider: string, reason: AuthFailureReason) => void;
 };
 
 export const AuthenticationStrategyInfoSchema = z.object({

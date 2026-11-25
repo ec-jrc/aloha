@@ -1,5 +1,34 @@
 # CHANGELOG
 
+## [4.2.1] - 04 Nov 2026
+
+### Added
+
+- Domain-level Prometheus metrics at `GET /metrics` using prom-client, replacing the generic HTTP middleware (`express-prometheus-middleware`)
+- Connection uptime metrics: `aloha_connection_up` gauge, `aloha_connection_transitions_total` counter, `aloha_server_up` gauge, `aloha_ping_duration_seconds` histogram
+- Hub summary gauge (`aloha_hub_connections`) with online/total counts per kind (client, agent, server)
+- MCP proxy metrics: request counter, request duration histogram, per-tool call duration histogram, active sessions gauge
+- A2A proxy metrics: request counter, request duration histogram, task status counter, active tasks gauge
+- Debug/adoption metrics: browser MCP inspector usage, browser A2A chat usage, testbed execution counter
+- Authentication failure counter with method and reason labels
+- Proxy health metrics: upstream error counter (classified by error kind), response size histogram
+- Catalogue hygiene: `aloha_connection_last_request_timestamp` gauge for detecting unused connections
+- `MetricsProvider` interface with `PrometheusMetricsProvider` and `NoopMetricsProvider` implementations — backend can be swapped without changing instrumentation code
+- Node.js process metrics (CPU, memory, event loop lag, GC, file descriptors) via prom-client `collectDefaultMetrics`
+- Prometheus scrape configuration (`prometheus.yml`) for docker-compose
+- Metrics documentation (`docs/metrics.md`) with example PromQL queries
+- E2E test for metrics pipeline verification (boots real server + MCP connection, scrapes `/metrics`)
+
+### Removed
+
+- `express-prometheus-middleware` and its generic HTTP-level metrics (replaced by domain-level instrumentation)
+
+### Fixed
+
+- Fixed default state management in client-workflow plugin (separate setState from updateById) (#178)
+- Fixed dialog form value reset in visibility-edit-dialog (#179)
+- Fixed JsonEditor crash in MCP inspector (#177)
+
 ## [4.2.0] - 27 Oct 2026
 
 ### Added

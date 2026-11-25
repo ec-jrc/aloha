@@ -151,7 +151,6 @@ export const validateRequestBody =
 // const agentRepository = () => injector.resolve("agentRepository");
 // const agentsCache = () => injector.resolve("agentsCache");
 
- 
 export const verifyPermission = async (
   obj: schemas.VisibilityInterface,
   req: Request,

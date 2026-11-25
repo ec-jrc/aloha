@@ -520,7 +520,8 @@ describe("MongoDbTestbedAgentRepository", () => {
     await db.collection("testbed_agents").deleteMany({});
   });
 
-  const sampleTestbedAgent: schemas.TestbedAgent = {
+  const sampleTestbedAgent: schemas.TestbedAgentWithId = {
+    id: "",
     name: "Testbed Agent",
     client: { apiKey: "my-api-key", baseURL: "http://localhost:5000" },
     useChatCompletions: true,

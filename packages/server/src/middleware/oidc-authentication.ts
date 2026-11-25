@@ -52,7 +52,13 @@ function safeDecodeJwt(
 }
 
 class OidcAuthPlugin implements authentication_strategy.AuthenticationStrategy {
-  async init() {}
+  private onAuthFailure?: authentication_strategy.AuthenticationStrategyOptions["onAuthFailure"];
+  // eslint-disable-next-line @typescript-eslint/require-await
+  async init(
+    options?: Partial<authentication_strategy.AuthenticationStrategyOptions>
+  ) {
+    this.onAuthFailure = options?.onAuthFailure;
+  }
 
   // eslint-disable-next-line @typescript-eslint/require-await
   async getAuthenticationMiddleware(
@@ -83,6 +89,7 @@ class OidcAuthPlugin implements authentication_strategy.AuthenticationStrategy {
             username: authentication_strategy.getUserFromSession(req).userId,
           })
           .warn("TokenSet expired");
+        this.onAuthFailure?.(OIDC_PROVIDER_NAME, "expired");
         authentication_strategy.clearSession(req, () => {
           return res.status(401).json({ error: "TokenSet expired" }).end();
         });
@@ -164,6 +171,7 @@ class OidcAuthPlugin implements authentication_strategy.AuthenticationStrategy {
 
       if (!id_token) {
         log.error("No id_token found");
+        this.onAuthFailure?.(OIDC_PROVIDER_NAME, "invalid");
         return res.redirect("/unauthorised");
       }
 
@@ -197,6 +205,7 @@ class OidcAuthPlugin implements authentication_strategy.AuthenticationStrategy {
 
       if (!userPrincipal) {
         log.error("Unable to fetch user principal");
+        this.onAuthFailure?.(OIDC_PROVIDER_NAME, "not_found");
         return res.redirect(resolve(homepage, "/unauthorised"));
       }
 

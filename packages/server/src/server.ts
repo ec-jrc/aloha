@@ -16,6 +16,7 @@ governing permissions and limitations under the Licence.
 import "dotenv/config";
 import { expressSetup } from "./endpoints/express-setup";
 import { mcpServerStartup } from "./connections/mcp-server-setup";
+import { initMetricsProvider } from "./metrics/init-telemetry";
 
 import { EventSource } from "eventsource";
 import { createFetch } from "node-fetch-native/proxy";
@@ -44,6 +45,12 @@ global.EventSource = EventSourceCustom;
 //   .map((url) => (url.match(/^\d/) ? url : `.${url}`));
 
 global.fetch = createFetch();
+
+// Initialize the metrics provider before anything that records
+// observations — notably mcpServerStartup()'s first ping cycle, which
+// otherwise runs before Express (and the /metrics route) is set up,
+// silently dropping every observation from server startup.
+initMetricsProvider();
 
 await initPlatformPlugins();
 // Setup the MCP servers

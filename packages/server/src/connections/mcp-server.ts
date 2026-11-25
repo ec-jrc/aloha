@@ -4,12 +4,15 @@ import { NodeStreamableHTTPServerTransport } from "@modelcontextprotocol/node";
 // the sseRequest/messageRequest routes below and the @modelcontextprotocol/server-legacy dependency.
 // import { SSEServerTransport } from "@modelcontextprotocol/server-legacy/sse";
 import {
-  AuthInfo,
-  Server,
-  Tool,
   CallToolRequest,
   CallToolResult,
   isInitializeRequest,
+  RequestMethod,
+  RequestTypeMap,
+  ResultTypeMap,
+  Server,
+  ServerContext,
+  Tool,
 } from "@modelcontextprotocol/server";
 
 /*
@@ -39,6 +42,8 @@ import { serveRegistry } from "../endpoints/servers-proxy-utils";
 import { verifyPermission } from "../endpoints/utils";
 import { injector } from "../injector/injector";
 import { getLogger } from "../injector/provide-logger";
+import type { MetricsProvider } from "../metrics/metrics-provider";
+import { getCurrentUserId } from "../metrics/user-id";
 import { TokenSet, TokenSetProvider } from "../middleware/oidc/oidc-support";
 import {
   filterOnlyMCPClient,
@@ -194,9 +199,15 @@ class ServerSession {
    */
   pendingClients: { [k: string]: Promise<MCPClient> } = {};
   lastActivity: number = Date.now();
+  private closed = false;
 
-  public constructor(server: Server) {
+  public constructor(
+    server: Server,
+    private serverPath: string,
+    private metrics: MetricsProvider
+  ) {
     this.server = server;
+    this.metrics.mcpSessionDelta(this.serverPath, 1);
   }
 
   public get transport() {
@@ -209,6 +220,10 @@ class ServerSession {
   }
 
   public async close(closeTransport: boolean) {
+    if (!this.closed) {
+      this.closed = true;
+      this.metrics.mcpSessionDelta(this.serverPath, -1);
+    }
     if (closeTransport) await this.server.transport?.close();
     await this.server.close();
     await Promise.all(
@@ -569,45 +584,65 @@ const createHubSessionServer: CreateSessionServerFunction = (
     }
   );
 
-  sessionServer.setRequestHandler("tools/list", (_request, context) => {
-    if (!context.sessionId) throw new Error("Must provide a session");
+  sessionServer.setRequestHandler(
+    "tools/list",
 
-    return {
-      tools: [DISCOVER_TOOLS_DEFINITION, INVOKE_TOOL_DEFINITION],
-    };
-  });
+    withMcpRequestMetrics(
+      options.serverPath,
+      "tools/list",
+      (_request, context) => {
+        if (!context.sessionId) throw new Error("Must provide a session");
 
-  sessionServer.setRequestHandler("tools/call", async (request, context) => {
-    if (!context.sessionId) throw new Error("Must provide a session");
+        return {
+          tools: [DISCOVER_TOOLS_DEFINITION, INVOKE_TOOL_DEFINITION],
+        };
+      },
 
-    const connections = await getConnectionsForSession(
-      context.sessionId,
-      getUserTokenSetProvider(context)
-    );
-    const mcpConnections = filterOnlyMCPClient(connections);
+      { id: options.id, name: options.name }
+    )
+  );
 
-    const req = {
-      ...context.http?.req,
-      auth: context.http?.authInfo,
-    } as unknown as Request;
+  sessionServer.setRequestHandler(
+    "tools/call",
 
-    switch (request.params.name) {
-      case "discover_tools":
-        return await discoverTools(
-          req,
-          DiscoverRequestSchema.parse(request.params.arguments),
-          mcpConnections
+    withMcpRequestMetrics(
+      options.serverPath,
+      "tools/call",
+      async (request, context) => {
+        if (!context.sessionId) throw new Error("Must provide a session");
+
+        const connections = await getConnectionsForSession(
+          context.sessionId,
+          getUserTokenSetProvider(context)
         );
-      case "invoke_tool":
-        return await invokeTool(
-          req,
-          InvokeToolRequestSchema.parse(request.params.arguments),
-          mcpConnections
-        );
-      default:
-        throw new Error("Unknown tool: " + request.params.name);
-    }
-  });
+        const mcpConnections = filterOnlyMCPClient(connections);
+
+        const req = {
+          ...context.http?.req,
+          auth: context.http?.authInfo,
+        } as unknown as Request;
+
+        switch (request.params.name) {
+          case "discover_tools":
+            return await discoverTools(
+              req,
+              DiscoverRequestSchema.parse(request.params.arguments),
+              mcpConnections
+            );
+          case "invoke_tool":
+            return await invokeTool(
+              req,
+              InvokeToolRequestSchema.parse(request.params.arguments),
+              mcpConnections
+            );
+          default:
+            throw new Error("Unknown tool: " + request.params.name);
+        }
+      },
+
+      { id: options.id, name: options.name }
+    )
+  );
 
   return sessionServer;
 };
@@ -646,135 +681,196 @@ const createStandardSessionServer: CreateSessionServerFunction = (
   });
 
   sessionServer.setRequestHandler(
+    "prompts/list",
+    withMcpRequestMetrics(
+      options.serverPath,
+      "prompts/list",
+      async (_request, context) => {
+        if (!context.sessionId) throw new Error("Must provide a session");
+
+        const connections = await getConnectionsForSession(
+          context.sessionId,
+          getUserTokenSetProvider(context)
+        );
+        return {
+          prompts: filterOnlyMCPClient(connections)
+            .map((c) => prefixNamedItems(c.connectionOptions, c.prompts))
+            .flat(),
+        };
+      },
+      { id: options.id, name: options.name }
+    )
+  );
+
+  sessionServer.setRequestHandler(
     "resources/templates/list",
-    async (_request, context) => {
-      if (!context.sessionId) throw new Error("Must provide a session");
+    withMcpRequestMetrics(
+      options.serverPath,
+      "resources/templates/list",
+      async (_request, context) => {
+        if (!context.sessionId) throw new Error("Must provide a session");
 
-      const connections = await getConnectionsForSession(
-        context.sessionId,
-        getUserTokenSetProvider(context)
-      );
+        const connections = await getConnectionsForSession(
+          context.sessionId,
+          getUserTokenSetProvider(context)
+        );
 
-      return {
-        resourceTemplates: filterOnlyMCPClient(connections)
-          .map((c) =>
-            prefixNamedItems(c.connectionOptions, c.resourceTemplates)
-          )
-          .flat(),
-      };
-    }
+        return {
+          resourceTemplates: filterOnlyMCPClient(connections)
+            .map((c) =>
+              prefixNamedItems(c.connectionOptions, c.resourceTemplates)
+            )
+            .flat(),
+        };
+      },
+      { id: options.id, name: options.name }
+    )
   );
 
   sessionServer.setRequestHandler(
     "resources/list",
-    async (_request, context) => {
-      if (!context.sessionId) throw new Error("Must provide a session");
+    withMcpRequestMetrics(
+      options.serverPath,
+      "resources/list",
+      async (_request, context) => {
+        if (!context.sessionId) throw new Error("Must provide a session");
 
-      const connections = await getConnectionsForSession(
-        context.sessionId,
-        getUserTokenSetProvider(context)
-      );
-      return {
-        resources: filterOnlyMCPClient(connections)
-          .map((c) => prefixNamedItems(c.connectionOptions, c.resources))
-          .flat(),
-      };
-    }
+        const connections = await getConnectionsForSession(
+          context.sessionId,
+          getUserTokenSetProvider(context)
+        );
+        return {
+          resources: filterOnlyMCPClient(connections)
+            .map((c) => prefixNamedItems(c.connectionOptions, c.resources))
+            .flat(),
+        };
+      },
+      { id: options.id, name: options.name }
+    )
   );
 
   sessionServer.setRequestHandler(
     "resources/read",
-    async (request, context) => {
-      if (!context.sessionId) throw new Error("Must provide a session");
-      const connections = await getConnectionsForSession(
-        context.sessionId,
-        getUserTokenSetProvider(context)
-      );
+    withMcpRequestMetrics(
+      options.serverPath,
+      "resources/read",
+      async (request, context) => {
+        if (!context.sessionId) throw new Error("Must provide a session");
+        const connections = await getConnectionsForSession(
+          context.sessionId,
+          getUserTokenSetProvider(context)
+        );
 
-      for (const c of filterOnlyMCPClient(connections)) {
-        const resource = c.resources.find((t) => t.uri == request.params.uri);
-        if (resource) {
-          const response = await c.client.readResource(request.params);
-          return response;
+        for (const c of filterOnlyMCPClient(connections)) {
+          const resource = c.resources.find((t) => t.uri == request.params.uri);
+          if (resource) {
+            const response = await c.client.readResource(request.params);
+            return response;
+          }
         }
-      }
-      throw new Error("Tool not found or server not connected");
-    }
+        throw new Error("Tool not found or server not connected");
+      },
+      { id: options.id, name: options.name }
+    )
   );
 
-  sessionServer.setRequestHandler("tools/list", async (_request, context) => {
-    if (!context.sessionId) throw new Error("Must provide a session");
+  sessionServer.setRequestHandler(
+    "tools/list",
 
-    const connections = await getConnectionsForSession(
-      context.sessionId,
-      getUserTokenSetProvider(context)
-    );
-    return {
-      tools: filterOnlyMCPClient(connections)
-        .map((c) => prefixNamedItems(c.connectionOptions, c.tools))
-        .flat(),
-    };
-  });
+    withMcpRequestMetrics(
+      options.serverPath,
+      "tools/list",
+      async (_request, context) => {
+        if (!context.sessionId) throw new Error("Must provide a session");
 
-  sessionServer.setRequestHandler("tools/call", async (request, context) => {
-    if (!context.sessionId) throw new Error("Must provide a session");
-    const connections = await getConnectionsForSession(
-      context.sessionId,
-      getUserTokenSetProvider(context)
-    );
+        const connections = await getConnectionsForSession(
+          context.sessionId,
+          getUserTokenSetProvider(context)
+        );
+        return {
+          tools: filterOnlyMCPClient(connections)
+            .map((c) => prefixNamedItems(c.connectionOptions, c.tools))
+            .flat(),
+        };
+      },
+      { id: options.id, name: options.name }
+    )
+  );
 
-    for (const c of filterOnlyMCPClient(connections)) {
-      const prefix = getPrefixForNamedItems(c.connectionOptions);
+  sessionServer.setRequestHandler(
+    "tools/call",
 
-      const tool = c.tools.find((t) => prefix + t.name === request.params.name);
-      if (tool) {
-        try {
-          c.client.setNotificationHandler(
-            "notifications/message",
-            async (notification) => {
-              logger().debug("LoggingMessageNotificationSchema", notification);
-              await context.mcpReq.notify(notification);
-            }
+    withMcpRequestMetrics(
+      options.serverPath,
+      "tools/call",
+      async (request, context) => {
+        if (!context.sessionId) throw new Error("Must provide a session");
+        const connections = await getConnectionsForSession(
+          context.sessionId,
+          getUserTokenSetProvider(context)
+        );
+
+        for (const c of filterOnlyMCPClient(connections)) {
+          const prefix = getPrefixForNamedItems(c.connectionOptions);
+
+          const tool = c.tools.find(
+            (t) => prefix + t.name === request.params.name
           );
-          c.client.setNotificationHandler(
-            "notifications/progress",
-            async (notification) => {
-              logger().debug("ProgressNotificationSchema", notification);
-              await context.mcpReq.notify(notification);
-            }
-          );
-          c.client.fallbackNotificationHandler = async (notification) => {
-            logger().debug(notification);
-            await context.mcpReq.notify(notification);
-          };
+          if (tool) {
+            try {
+              c.client.setNotificationHandler(
+                "notifications/message",
+                async (notification) => {
+                  logger().debug(
+                    "LoggingMessageNotificationSchema",
+                    notification
+                  );
+                  await context.mcpReq.notify(notification);
+                }
+              );
+              c.client.setNotificationHandler(
+                "notifications/progress",
+                async (notification) => {
+                  logger().debug("ProgressNotificationSchema", notification);
+                  await context.mcpReq.notify(notification);
+                }
+              );
+              c.client.fallbackNotificationHandler = async (notification) => {
+                logger().debug(notification);
+                await context.mcpReq.notify(notification);
+              };
 
-          const response = await c.client.callTool(
-            {
-              ...request.params,
-              name: request.params.name.replace(prefix, ""),
-            },
-            {
-              onprogress: (progress) => {
-                context.mcpReq
-                  .notify({
-                    params: progress,
-                    method: "notifications/progress",
-                  })
-                  .then(() => {})
-                  .catch((err) => logger().error(err));
-              },
+              const response = await c.client.callTool(
+                {
+                  ...request.params,
+                  name: request.params.name.replace(prefix, ""),
+                },
+                {
+                  onprogress: (progress) => {
+                    context.mcpReq
+                      .notify({
+                        params: progress,
+                        method: "notifications/progress",
+                      })
+                      .then(() => {})
+                      .catch((err) => logger().error(err));
+                  },
+                }
+              );
+              return response;
+            } finally {
+              c.client.removeNotificationHandler("notifications/message");
+              c.client.removeNotificationHandler("notifications/progress");
+              c.client.fallbackNotificationHandler = undefined;
             }
-          );
-          return response;
-        } finally {
-          c.client.removeNotificationHandler("notifications/message");
-          c.client.removeNotificationHandler("notifications/progress");
-          c.client.fallbackNotificationHandler = undefined;
+          }
         }
-      }
-    }
-    throw new Error("Tool not found or server not connected");
-  });
+        throw new Error("Tool not found or server not connected");
+      },
+
+      { id: options.id, name: options.name }
+    )
+  );
 
   return sessionServer;
 };
@@ -783,6 +879,7 @@ class MCPServer {
   id: string;
   router: CustomRouter | undefined;
   private mcpManager: MCPManager;
+  private metrics: MetricsProvider;
   private reapHandle: ReturnType<typeof setInterval> | null = null;
   private serverSessions: { [k: string]: ServerSession } = {};
 
@@ -793,6 +890,7 @@ class MCPServer {
     this.options = options;
     this.id = options.id;
     this.mcpManager = injector().resolve("mcpManager");
+    this.metrics = injector().resolve("metricsProvider");
   }
 
   registry(req: Request, res: Response) {
@@ -851,14 +949,20 @@ class MCPServer {
             throw new Error("There was an error when retrieving the session.");
           }
           if (c.id in serverSessions[sessionId].clients) {
-            if (forceRefresh) {
+            const sessionClient = serverSessions[sessionId].clients[c.id];
+            const currentRevision = this.mcpManager.getConnectionRevision(c.id);
+            if (
+              forceRefresh ||
+              sessionClient.revisionVersion < currentRevision
+            ) {
               initPromises.push(
-                serverSessions[sessionId].clients[c.id]
-                  .pingClient()
-                  .then(() => serverSessions[sessionId].clients[c.id])
+                sessionClient.pingClient().then(() => {
+                  sessionClient.revisionVersion = currentRevision;
+                  return sessionClient;
+                })
               );
             } else {
-              returnConnections.push(serverSessions[sessionId].clients[c.id]);
+              returnConnections.push(sessionClient);
             }
             continue;
           }
@@ -884,6 +988,9 @@ class MCPServer {
               // Populate tools/prompts/resources before the client is used.
               await client.pingClient();
               serverSessions[sessionId].clients[c.id] = client;
+              client.revisionVersion = this.mcpManager.getConnectionRevision(
+                c.id
+              );
               return client;
             })
             .finally(() => {
@@ -912,102 +1019,102 @@ class MCPServer {
 
       this.router = {
         // [SSE-SUPPORT-REMOVED] Legacy inbound SSE endpoint; restore together with the /:path/sse and
-      // /:path/messages routes in servers-proxy-mcp.ts and the @modelcontextprotocol/server-legacy dependency.
-      // sseRequest: async (_req: Request, res: ServerResponse) => {
-      //   logger().debug("Received sse connection request");
-      //   const transport = new SSEServerTransport(messagesUrl, res);
-      //   const sessionServer = createSessionServer(
-      //     this.options,
-      //     getConnectionsForSession
-      //   );
-      //   try {
-      //     await sessionServer.connect(transport);
-      //     // Store session AFTER successful connect
-      //     serverSessions[transport.sessionId] = new ServerSession(
-      //       sessionServer
-      //     );
-      //     logger().debug(
-      //       { sessionId: transport.sessionId },
-      //       "Creating transport"
-      //     );
-      //     res.on("close", () => {
-      //       logger().debug(
-      //         { sessionId: transport.sessionId },
-      //         "Disconnecting transport"
-      //       );
-      //       const session = serverSessions[transport.sessionId];
-      //       delete serverSessions[transport.sessionId];
-      //       session?.close(true).catch((err) => logger().error(err));
-      //     });
-      //   } catch (error) {
-      //     logger().error(error);
-      //     // Clean up on failure
-      //     await sessionServer.close().catch(() => {});
-      //     res.end();
-      //   }
-      // },
-      // messageRequest: async (req, res) => {
-      //   const sessionId = req.query.sessionId as string;
-      //   const log = logger().child({ sessionId });
-      //
-      //   log.debug(`Received message`);
-      //
-      //   try {
-      //     if (!sessionId || !serverSessions[sessionId]) {
-      //       log.error(`No session found`);
-      //       res.status(404).json({
-      //         jsonrpc: "2.0",
-      //         error: {
-      //           code: -32000,
-      //           message: `No session found for ` + sessionId,
-      //         },
-      //         id: null,
-      //       });
-      //       return;
-      //     }
-      //     const transport = serverSessions[sessionId].transport;
-      //     if (!transport) {
-      //       log.error(`No transport found`);
-      //       res.status(404).json({
-      //         jsonrpc: "2.0",
-      //         error: {
-      //           code: -32000,
-      //           message: `No transport found for session ` + sessionId,
-      //         },
-      //         id: null,
-      //       });
-      //       return;
-      //     }
-      //     if (!(transport instanceof SSEServerTransport)) {
-      //       log.error(`Transport type does not match request`);
-      //       res.status(404).json({
-      //         jsonrpc: "2.0",
-      //         error: {
-      //           code: -32000,
-      //           message:
-      //             `Message endpoint called for non SSE transport ` +
-      //             sessionId,
-      //         },
-      //         id: null,
-      //       });
-      //       return;
-      //     }
-      //     serverSessions[sessionId].touch();
-      //     await transport.handlePostMessage(req, res);
-      //   } catch (error) {
-      //     log.error(error);
-      //     res.status(500).json({
-      //       jsonrpc: "2.0",
-      //       error: {
-      //         code: -32000,
-      //         message: "Internal server error",
-      //       },
-      //       id: null,
-      //     });
-      //     // res.status(500).json({ error }).end();
-      //   }
-      // },
-      httpPostRequest: async (req: Request, res) => {
+        // /:path/messages routes in servers-proxy-mcp.ts and the @modelcontextprotocol/server-legacy dependency.
+        // sseRequest: async (_req: Request, res: ServerResponse) => {
+        //   logger().debug("Received sse connection request");
+        //   const transport = new SSEServerTransport(messagesUrl, res);
+        //   const sessionServer = createSessionServer(
+        //     this.options,
+        //     getConnectionsForSession
+        //   );
+        //   try {
+        //     await sessionServer.connect(transport);
+        //     // Store session AFTER successful connect
+        //     serverSessions[transport.sessionId] = new ServerSession(
+        //       sessionServer
+        //     );
+        //     logger().debug(
+        //       { sessionId: transport.sessionId },
+        //       "Creating transport"
+        //     );
+        //     res.on("close", () => {
+        //       logger().debug(
+        //         { sessionId: transport.sessionId },
+        //         "Disconnecting transport"
+        //       );
+        //       const session = serverSessions[transport.sessionId];
+        //       delete serverSessions[transport.sessionId];
+        //       session?.close(true).catch((err) => logger().error(err));
+        //     });
+        //   } catch (error) {
+        //     logger().error(error);
+        //     // Clean up on failure
+        //     await sessionServer.close().catch(() => {});
+        //     res.end();
+        //   }
+        // },
+        // messageRequest: async (req, res) => {
+        //   const sessionId = req.query.sessionId as string;
+        //   const log = logger().child({ sessionId });
+        //
+        //   log.debug(`Received message`);
+        //
+        //   try {
+        //     if (!sessionId || !serverSessions[sessionId]) {
+        //       log.error(`No session found`);
+        //       res.status(404).json({
+        //         jsonrpc: "2.0",
+        //         error: {
+        //           code: -32000,
+        //           message: `No session found for ` + sessionId,
+        //         },
+        //         id: null,
+        //       });
+        //       return;
+        //     }
+        //     const transport = serverSessions[sessionId].transport;
+        //     if (!transport) {
+        //       log.error(`No transport found`);
+        //       res.status(404).json({
+        //         jsonrpc: "2.0",
+        //         error: {
+        //           code: -32000,
+        //           message: `No transport found for session ` + sessionId,
+        //         },
+        //         id: null,
+        //       });
+        //       return;
+        //     }
+        //     if (!(transport instanceof SSEServerTransport)) {
+        //       log.error(`Transport type does not match request`);
+        //       res.status(404).json({
+        //         jsonrpc: "2.0",
+        //         error: {
+        //           code: -32000,
+        //           message:
+        //             `Message endpoint called for non SSE transport ` +
+        //             sessionId,
+        //         },
+        //         id: null,
+        //       });
+        //       return;
+        //     }
+        //     serverSessions[sessionId].touch();
+        //     await transport.handlePostMessage(req, res);
+        //   } catch (error) {
+        //     log.error(error);
+        //     res.status(500).json({
+        //       jsonrpc: "2.0",
+        //       error: {
+        //         code: -32000,
+        //         message: "Internal server error",
+        //       },
+        //       id: null,
+        //     });
+        //     // res.status(500).json({ error }).end();
+        //   }
+        // },
+        httpPostRequest: async (req: Request, res) => {
           try {
             const rawBody = await readRawBody(req);
             // console.log(rawBody);
@@ -1103,7 +1210,9 @@ class MCPServer {
                 );
                 // Store the session when SDK confirms initialization
                 serverSessions[initializedSessionId] = new ServerSession(
-                  sessionServer
+                  sessionServer,
+                  this.options.serverPath,
+                  this.metrics
                 );
               },
             });
@@ -1230,6 +1339,119 @@ class MCPServer {
 
 export default MCPServer;
 
+/**
+ * Wraps an MCP request handler with request-count/duration instrumentation
+ * (`aloha_mcp_requests_total`, `aloha_mcp_request_duration_seconds`), and —
+ * for `tools/call` — per-tool duration (`aloha_mcp_tool_call_duration_seconds`).
+ *
+ * Also records proxy upstream errors (classified by kind), response payload
+ * size, and last-request timestamp for catalogue hygiene.
+ */
+export function withMcpRequestMetrics<
+  M extends RequestMethod,
+  TRequest extends RequestTypeMap[M],
+  TResult extends ResultTypeMap[M],
+>(
+  serverPath: string,
+  operation: M,
+  handler: (
+    request: TRequest,
+    context: ServerContext
+  ) => TResult | Promise<TResult>,
+  connectionIdentity?: { id: string; name: string }
+) {
+  return async (
+    request: TRequest,
+    context: ServerContext
+  ): Promise<TResult> => {
+    const metrics: MetricsProvider = injector().resolve("metricsProvider");
+    const user = getCurrentUserId();
+    const start = performance.now();
+    if (connectionIdentity) {
+      metrics.connectionRequestReceived(
+        connectionIdentity.id,
+        connectionIdentity.name
+      );
+    }
+    try {
+      const result = await handler(request, context);
+      const durationSec = (performance.now() - start) / 1000;
+      metrics.mcpRequestComplete(
+        serverPath,
+        operation,
+        user,
+        durationSec,
+        true
+      );
+      if (
+        operation === "tools/call" &&
+        "params" in request &&
+        typeof (request.params as { name?: unknown }).name === "string"
+      ) {
+        metrics.mcpToolCallComplete(
+          serverPath,
+          (request.params as { name: string }).name,
+          durationSec
+        );
+      }
+      const responseJson = JSON.stringify(result);
+      metrics.proxyResponseSize(
+        serverPath,
+        "mcp",
+        Buffer.byteLength(responseJson, "utf8")
+      );
+      return result;
+    } catch (e) {
+      const durationSec = (performance.now() - start) / 1000;
+      metrics.mcpRequestComplete(
+        serverPath,
+        operation,
+        user,
+        durationSec,
+        false
+      );
+      metrics.proxyUpstreamError(serverPath, "mcp", classifyUpstreamError(e));
+      throw e;
+    }
+  };
+}
+
+/**
+ * Classify an upstream error into a known error_kind label for metrics.
+ */
+export function classifyUpstreamError(
+  e: unknown
+): "timeout" | "connection_refused" | "auth_failure" | "upstream_error" {
+  if (e instanceof Error) {
+    const msg = e.message.toLowerCase();
+    if (
+      msg.includes("timeout") ||
+      msg.includes("timed out") ||
+      msg.includes("etimedout")
+    ) {
+      return "timeout";
+    }
+    if (
+      msg.includes("econnrefused") ||
+      msg.includes("connection refused") ||
+      msg.includes("enotfound") ||
+      msg.includes("econnreset")
+    ) {
+      return "connection_refused";
+    }
+    if (
+      msg.includes("401") ||
+      msg.includes("403") ||
+      msg.includes("unauthorized") ||
+      msg.includes("forbidden") ||
+      msg.includes("auth")
+    ) {
+      return "auth_failure";
+    }
+  }
+  return "upstream_error";
+}
+
 function injectAuthFieldWithSessionUser(req: Request) {
   if (
     authentication_strategy.isUserAuthenticated(req) &&
@@ -1273,9 +1495,7 @@ function extractBearerToken(
  *     non-dedicated connection instead of creating a per-user client.
  */
 function getUserTokenSetProvider(
-  context:
-    | { http?: { req?: globalThis.Request; authInfo?: AuthInfo } }
-    | undefined
+  context: ServerContext | undefined
 ): TokenSetProvider | undefined {
   const attachedTokenSet = context?.http?.authInfo?.extra?.tokenSet as
     | TokenSet

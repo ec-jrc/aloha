@@ -24,6 +24,7 @@ import "../../src/injector/injector";
 import MCPManager from "../../src/connections/mcp-manager";
 import MCPClient from "../../src/connections/mcp-client";
 import { A2AClient } from "../../src/connections/a2a-client";
+import { NoopMetricsProvider } from "../../src/metrics/noop";
 
 const makeConnectionOpts = (
   overrides: Partial<schemas.MCPBaseConnectionWithId> = {}
@@ -50,9 +51,10 @@ describe("MCPManager", () => {
   let manager: MCPManager;
   const mockRepo = {} as any;
   const mockAgentRepo = {} as any;
+  const mockMetrics = new NoopMetricsProvider();
 
   beforeEach(() => {
-    manager = new MCPManager(mockRepo, mockAgentRepo);
+    manager = new MCPManager(mockRepo, mockAgentRepo, mockMetrics);
   });
 
   afterEach(() => {

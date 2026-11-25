@@ -20,6 +20,7 @@ import { createProxyMiddleware } from "http-proxy-middleware";
 import { authorise } from "../middleware/authorise";
 
 const agentRepository = () => injector().resolve("testbedAgentRepository");
+const metricsProvider = () => injector().resolve("metricsProvider");
 const logger = getLogger("TESTBED-AGENT");
 
 export function testbedAgentProxyRoutes() {
@@ -53,6 +54,23 @@ export function testbedAgentProxyRoutes() {
       return path;
     },
     router: resolveTarget,
+    on: {
+      proxyRes: (proxyRes, req) => {
+        // Track testbed executions for chat completion requests
+        if (req.url?.includes("/chat/completions")) {
+          const agentId = req.params?.id || "unknown";
+          const success = proxyRes.statusCode !== undefined && proxyRes.statusCode < 400;
+          metricsProvider().testbedExecution(agentId, success);
+        }
+      },
+      error: (_err, req) => {
+        // Track failed executions
+        if (req.url?.includes("/chat/completions")) {
+          const agentId = req.params?.id || "unknown";
+          metricsProvider().testbedExecution(agentId, false);
+        }
+      },
+    },
   });
 
   router.get("/:id/models", authorise([]), async (req, res) => {
